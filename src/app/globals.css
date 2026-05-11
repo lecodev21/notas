@@ -1,0 +1,117 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* ── Class-based dark variant ─────────────────────────────────────────────── */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Static design tokens (same in both themes) ──────────────────────────── */
+@theme {
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  --color-accent:       #6366f1;
+  --color-accent-hover: #4f46e5;
+}
+
+/* ── Light theme (default / :root) ───────────────────────────────────────── *
+ *  Warm stone palette: soft off-whites with a sandy undertone.
+ *  Feels crafted — like aged paper meets clean UI.
+ * ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --app-bg-sidebar:  #f2f1ee;   /* linen sidebar */
+  --app-bg-list:     #f8f7f4;   /* warm off-white note list */
+  --app-bg-editor:   #fefefe;   /* near-pure-white editor */
+  --app-bg-surface:  #eceae6;   /* cards, modals */
+  --app-bg-menu:     #ffffff;   /* dropdowns */
+  --app-bg-input:    rgba(0, 0, 0, 0.04);
+  --app-bg-auth:     #efede9;   /* auth page bg */
+
+  /* Interactive states */
+  --app-hover:        rgba(0, 0, 0, 0.045);
+  --app-hover-strong: rgba(0, 0, 0, 0.075);
+
+  /* Borders */
+  --app-border:       rgba(0, 0, 0, 0.08);
+  --app-border-strong:rgba(0, 0, 0, 0.12);
+
+  /* Text */
+  --app-text-primary:   #1c1917;   /* warm near-black */
+  --app-text-secondary: #57534e;   /* stone-600 */
+  --app-text-muted:     #a8a29e;   /* stone-400 */
+  --app-text-faint:     #d4cfc9;   /* stone-300, disabled/hints */
+
+  /* Scrollbar */
+  --app-scrollbar:       rgba(0, 0, 0, 0.15);
+  --app-scrollbar-hover: rgba(0, 0, 0, 0.28);
+}
+
+/* ── Dark theme ──────────────────────────────────────────────────────────── *
+ *  Tokyo Night-inspired: deep blue-purple backgrounds with cool slate text.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.dark {
+  /* Surfaces */
+  --app-bg-sidebar:  #1a1b26;
+  --app-bg-list:     #1f2035;
+  --app-bg-editor:   #1e1e2e;
+  --app-bg-surface:  #252535;
+  --app-bg-menu:     #2a2a40;
+  --app-bg-input:    rgba(255, 255, 255, 0.05);
+  --app-bg-auth:     #1a1a2e;
+
+  /* Interactive states */
+  --app-hover:        rgba(255, 255, 255, 0.05);
+  --app-hover-strong: rgba(255, 255, 255, 0.08);
+
+  /* Borders */
+  --app-border:        rgba(255, 255, 255, 0.08);
+  --app-border-strong: rgba(255, 255, 255, 0.10);
+
+  /* Text */
+  --app-text-primary:   #e2e8f0;
+  --app-text-secondary: #94a3b8;
+  --app-text-muted:     #64748b;
+  --app-text-faint:     #475569;
+
+  /* Scrollbar */
+  --app-scrollbar:       rgba(255, 255, 255, 0.15);
+  --app-scrollbar-hover: rgba(255, 255, 255, 0.28);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--app-bg-editor);
+  color: var(--app-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Smooth theme transitions ────────────────────────────────────────────── */
+body,
+.theme-transition {
+  transition:
+    background-color 180ms ease,
+    border-color     180ms ease,
+    color            180ms ease;
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-hover);
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection { background: rgba(99, 102, 241, 0.3); }
