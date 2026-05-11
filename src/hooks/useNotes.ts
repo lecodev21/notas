@@ -98,16 +98,28 @@ export function useUpdateNote() {
     // Update the single-note cache without re-fetching.
     await globalMutate(`/api/notes/${id}`, { note }, { revalidate: false });
 
-    // Patch each list cache in-place with the updated note — no network
-    // request, no clearing of the cache, so the note list never flickers.
-    await globalMutate(
-      (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
-      (current: { notes: NoteWithRelations[] } | undefined) => {
-        if (!current) return current;
-        return { notes: current.notes.map((n) => (n.id === id ? note : n)) };
-      },
-      { revalidate: false }
-    );
+    const isVisibilityChange = "isTrashed" in data || "isPinned" in data;
+
+    if (isVisibilityChange) {
+      // Trash/restore/pin changes the note's membership in filtered lists
+      // (e.g. a trashed note must disappear from the normal list).
+      // Revalidate so each list reflects the new state correctly.
+      await globalMutate(
+        (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
+        undefined,
+        { revalidate: true }
+      );
+    } else {
+      // Title/body/tag changes — patch in-place so the list never flickers.
+      await globalMutate(
+        (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
+        (current: { notes: NoteWithRelations[] } | undefined) => {
+          if (!current) return current;
+          return { notes: current.notes.map((n) => (n.id === id ? note : n)) };
+        },
+        { revalidate: false }
+      );
+    }
 
     return note as NoteWithRelations;
   }

@@ -94,8 +94,6 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     });
     if (note) {
       setSelectedNoteId(note.id);
-      // Update the URL without triggering Next.js navigation — this keeps
-      // the AppShell mounted so the notebook/view context is preserved.
       window.history.replaceState(null, "", `/notes/${note.id}`);
     }
   }
