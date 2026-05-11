@@ -10,6 +10,9 @@ export async function GET() {
   const notebooks = await prisma.notebook.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "asc" },
+    include: {
+      _count: { select: { notes: true } },
+    },
   });
 
   return apiSuccess({ notebooks });

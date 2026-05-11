@@ -3,7 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import type { Notebook } from "@/generated/prisma/client";
 
-type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[] };
+type NotebookWithChildren = Notebook & {
+  children?: NotebookWithChildren[];
+  _count?: { notes: number };
+};
 
 interface NotebookTreeProps {
   notebooks: NotebookWithChildren[];
@@ -154,13 +157,21 @@ function NotebookItem({
         ) : (
           <button
             onClick={() => onSelect(notebook.id)}
-            className="flex-1 flex items-center gap-1.5 py-1.5 text-xs truncate text-left min-w-0"
+            className="flex-1 flex items-center gap-1.5 py-1.5 text-xs text-left min-w-0"
             style={{ color: isSelected ? "#818cf8" : "var(--app-text-secondary)" }}
           >
             <span className="shrink-0" style={{ color: "var(--app-text-muted)" }}>
               📓
             </span>
-            <span className="truncate">{notebook.name}</span>
+            <span className="truncate flex-1">{notebook.name}</span>
+            {(notebook._count?.notes ?? 0) > 0 && (
+              <span
+                className="ml-auto shrink-0 tabular-nums"
+                style={{ color: "var(--app-text-faint)", fontSize: "0.65rem" }}
+              >
+                {notebook._count!.notes}
+              </span>
+            )}
           </button>
         )}
 

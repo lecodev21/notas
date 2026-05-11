@@ -9,8 +9,10 @@ const fetcher = (url: string) =>
     return r.json();
   });
 
+export type NotebookWithCount = Notebook & { _count: { notes: number } };
+
 export function useNotebooks() {
-  const { data, error, isLoading } = useSWR<{ notebooks: Notebook[] }>(
+  const { data, error, isLoading } = useSWR<{ notebooks: NotebookWithCount[] }>(
     "/api/notebooks",
     fetcher
   );

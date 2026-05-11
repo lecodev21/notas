@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
 import { useState } from "react";
 
-type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[] };
+type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[]; _count?: { notes: number } };
 type TagWithCount = Tag & { _count: { noteTags: number } };
 
 interface SidebarProps {
