@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
@@ -17,13 +18,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // suppressHydrationWarning: the inline script may add/remove the "dark"
-    // class before React hydrates, causing a benign mismatch warning.
     <html lang="es" className="h-full" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: antiFlashScript }} />
-      </head>
       <body className="h-full antialiased">
+        {/* beforeInteractive runs before hydration, preventing theme flash */}
+        <Script
+          id="anti-flash"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: antiFlashScript }}
+        />
         <SessionProvider>
           <ThemeProvider>{children}</ThemeProvider>
         </SessionProvider>
