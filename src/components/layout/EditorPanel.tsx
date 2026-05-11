@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
+import type { EditorView } from "@codemirror/view";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
+import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -44,6 +46,21 @@ export function EditorPanel({
   const [mode, setMode] = useState<ViewMode>("split");
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Shared with MarkdownToolbar so toolbar buttons can dispatch transactions
+  const editorViewRef = useRef<EditorView | null>(null);
+
+  // ── Readable line-length toggle ───────────────────────────────────────────
+  const [readableWidth, setReadableWidth] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("inkdrop-readable-width") === "true";
+  });
+  const toggleReadableWidth = () =>
+    setReadableWidth((v) => {
+      const next = !v;
+      localStorage.setItem("inkdrop-readable-width", String(next));
+      return next;
+    });
 
   // ── Local state ──────────────────────────────────────────────────────────
   const [localBody, setLocalBody] = useState(note?.body ?? "");
@@ -161,6 +178,14 @@ export function EditorPanel({
     [note, onUpdate]
   );
 
+  // ── Word-count stats ─────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const words = localBody.trim() === "" ? 0 : localBody.trim().split(/\s+/).length;
+    const chars = localBody.length;
+    const mins  = Math.ceil(words / 200);
+    return { words, chars, mins };
+  }, [localBody]);
+
   if (loading) {
     return (
       <div
@@ -240,6 +265,23 @@ export function EditorPanel({
               {m === "edit" ? "Editar" : m === "split" ? "Dividir" : "Vista previa"}
             </button>
           ))}
+
+          <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+
+          {/* Readable line-length toggle */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={toggleReadableWidth}
+            title={readableWidth ? "Ancho completo" : "Ancho de lectura (≈680 px)"}
+            className={readableWidth ? "text-indigo-400" : ""}
+          >
+            {/* Column-width icon: two vertical bars with ↔ arrow */}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 6h16M4 12h10M4 18h7" />
+            </svg>
+          </Button>
         </div>
 
         <div className="flex items-center gap-1">
@@ -351,17 +393,25 @@ export function EditorPanel({
 
       <div className="shrink-0" style={{ borderBottom: "1px solid var(--app-border)" }} />
 
+      {/* Markdown formatting toolbar — only in edit/split, not preview */}
+      {mode !== "preview" && <MarkdownToolbar editorViewRef={editorViewRef} />}
+
       {/* Editor / Preview */}
       <div className="flex-1 overflow-hidden flex">
         {(mode === "edit" || mode === "split") && (
           <div
             ref={editorPanelRef}
-            className={cn("overflow-hidden", mode === "split" ? "w-1/2" : "w-full")}
+            className={cn(
+              "overflow-hidden",
+              mode === "split" ? "w-1/2" : "w-full",
+            )}
             style={mode === "split" ? { borderRight: "1px solid var(--app-border)" } : undefined}
           >
             <MarkdownEditor
               key={note.id}
               value={localBody}
+              editorViewRef={editorViewRef}
+              readableWidth={readableWidth}
               onChange={(v) => {
                 setLocalBody(v);
                 debouncedSave("body", v);
@@ -375,12 +425,36 @@ export function EditorPanel({
             ref={previewPanelRef}
             className={cn(
               "overflow-y-auto",
-              mode === "split" ? "w-1/2" : "w-full"
+              mode === "split" ? "w-1/2" : "w-full",
             )}
           >
-            <MarkdownPreviewWrapper body={localBody} />
+            <div style={readableWidth ? { maxWidth: 680, margin: "0 auto" } : undefined}>
+              <MarkdownPreviewWrapper
+                body={localBody}
+                onToggleTask={note.isTrashed ? undefined : (idx) => {
+                  const next = toggleTaskAtIndex(localBody, idx);
+                  setLocalBody(next);
+                  debouncedSave("body", next);
+                }}
+              />
+            </div>
           </div>
         )}
+      </div>
+
+      {/* Word-count status bar */}
+      <div
+        className="shrink-0 flex items-center gap-3 px-4 py-1 text-xs select-none theme-transition"
+        style={{
+          borderTop: "1px solid var(--app-border)",
+          color: "var(--app-text-faint)",
+        }}
+      >
+        <span>{stats.words.toLocaleString("es-MX")} {stats.words === 1 ? "palabra" : "palabras"}</span>
+        <span style={{ color: "var(--app-border-strong)" }}>·</span>
+        <span>{stats.chars.toLocaleString("es-MX")} {stats.chars === 1 ? "carácter" : "caracteres"}</span>
+        <span style={{ color: "var(--app-border-strong)" }}>·</span>
+        <span>{stats.mins} {stats.mins === 1 ? "min" : "mins"} de lectura</span>
       </div>
     </div>
   );
@@ -485,16 +559,39 @@ function TagPicker({
   );
 }
 
-function MarkdownPreviewWrapper({ body }: { body: string }) {
-  const [Preview, setPreview] = useState<React.ComponentType<{ content: string }> | null>(null);
+/** Toggle the nth task checkbox (0-based) in a markdown body string. */
+function toggleTaskAtIndex(body: string, idx: number): string {
+  let count = 0;
+  return body.replace(/^(- \[)([ xX])(\] )/gm, (match, open, check, close) => {
+    if (count++ === idx) {
+      const isDone = check !== " ";
+      return `${open}${isDone ? " " : "x"}${close}`;
+    }
+    return match;
+  });
+}
+
+type PreviewComponent = React.ComponentType<{
+  content: string;
+  onToggleTask?: (taskIndex: number) => void;
+}>;
+
+function MarkdownPreviewWrapper({
+  body,
+  onToggleTask,
+}: {
+  body: string;
+  onToggleTask?: (taskIndex: number) => void;
+}) {
+  const [Preview, setPreview] = useState<PreviewComponent | null>(null);
 
   useEffect(() => {
     import("@/components/editor/MarkdownPreview").then((mod) => {
-      setPreview(() => mod.MarkdownPreview);
+      setPreview(() => mod.MarkdownPreview as PreviewComponent);
     });
   }, []);
 
   if (!Preview)
     return <div className="px-6 py-4"><Spinner className="text-gray-500" /></div>;
-  return <Preview content={body} />;
+  return <Preview content={body} onToggleTask={onToggleTask} />;
 }
