@@ -1,6 +1,15 @@
 import { cn, formatDate, getExcerpt, truncate } from "@/lib/utils";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 
+/** Parse `- [x]` / `- [ ]` task lines and return { done, total }. */
+function parseTasks(body: string): { done: number; total: number } | null {
+  const matches = body.match(/^- \[([ xX])\] /gm);
+  if (!matches || matches.length === 0) return null;
+  const total = matches.length;
+  const done  = matches.filter((m) => m.includes("[x]") || m.includes("[X]")).length;
+  return { done, total };
+}
+
 type NoteWithTags = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
   notebook?: { id: string; name: string } | null;
@@ -14,6 +23,7 @@ interface NoteCardProps {
 
 export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
   const excerpt = getExcerpt(note.body);
+  const tasks   = parseTasks(note.body);
 
   return (
     <button
@@ -63,6 +73,30 @@ export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
         </p>
       )}
 
+      {/* ── Task progress indicator ── */}
+      {tasks && (
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs" style={{ color: "var(--app-text-muted)" }}>
+            ☑ {tasks.done}/{tasks.total}
+          </span>
+          {/* Mini progress bar */}
+          <div
+            className="flex-1 rounded-full overflow-hidden"
+            style={{ height: 3, backgroundColor: "var(--app-border-strong)" }}
+          >
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${Math.round((tasks.done / tasks.total) * 100)}%`,
+                backgroundColor:
+                  tasks.done === tasks.total ? "#22c55e" : "#6366f1",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Tags ── */}
       {note.noteTags.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {note.noteTags.slice(0, 3).map(({ tag }) => (
