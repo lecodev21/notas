@@ -11,6 +11,7 @@ interface NotebookTreeProps {
   onSelect: (id: string) => void;
   onRename?: (id: string, name: string) => void;
   onDelete?: (id: string) => void;
+  onNewChild?: (parentId: string, name: string) => void;
   depth?: number;
 }
 
@@ -20,6 +21,7 @@ export function NotebookTree({
   onSelect,
   onRename,
   onDelete,
+  onNewChild,
   depth = 0,
 }: NotebookTreeProps) {
   return (
@@ -32,6 +34,7 @@ export function NotebookTree({
           onSelect={onSelect}
           onRename={onRename}
           onDelete={onDelete}
+          onNewChild={onNewChild}
           depth={depth}
         />
       ))}
@@ -45,6 +48,7 @@ function NotebookItem({
   onSelect,
   onRename,
   onDelete,
+  onNewChild,
   depth,
 }: {
   notebook: NotebookWithChildren;
@@ -52,20 +56,28 @@ function NotebookItem({
   onSelect: (id: string) => void;
   onRename?: (id: string, name: string) => void;
   onDelete?: (id: string) => void;
+  onNewChild?: (parentId: string, name: string) => void;
   depth: number;
 }) {
   const hasChildren = (notebook.children?.length ?? 0) > 0;
   const [expanded, setExpanded] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(notebook.name);
+  const [addingChild, setAddingChild] = useState(false);
+  const [childName, setChildName] = useState("");
   const isSelected = selectedId === notebook.id;
   const menuRef = useRef<HTMLDivElement>(null);
+  const childInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setConfirmDelete(false);
+      }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -76,6 +88,22 @@ function NotebookItem({
       onRename?.(notebook.id, renameValue.trim());
     }
     setRenaming(false);
+  }
+
+  function handleAddChild() {
+    setAddingChild(true);
+    setExpanded(true);
+    setMenuOpen(false);
+    // Focus the input after it mounts
+    setTimeout(() => childInputRef.current?.focus(), 0);
+  }
+
+  function handleChildSubmit() {
+    if (childName.trim()) {
+      onNewChild?.(notebook.id, childName.trim());
+    }
+    setAddingChild(false);
+    setChildName("");
   }
 
   return (
@@ -151,41 +179,92 @@ function NotebookItem({
             </button>
             {menuOpen && (
               <div
-                className="absolute right-0 top-6 z-10 rounded-lg shadow-xl py-1 w-36"
+                className="absolute right-0 top-6 z-10 rounded-lg shadow-xl w-48"
                 style={{
                   backgroundColor: "var(--app-bg-menu)",
                   border: "1px solid var(--app-border-strong)",
                 }}
               >
-                {onRename && (
-                  <button
-                    className="w-full text-left px-3 py-1.5 text-xs transition-colors"
-                    style={{ color: "var(--app-text-secondary)" }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                        "var(--app-hover)")
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
-                    }
-                    onClick={() => {
-                      setRenaming(true);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    Renombrar
-                  </button>
-                )}
-                {onDelete && (
-                  <button
-                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                    onClick={() => {
-                      onDelete(notebook.id);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    Eliminar
-                  </button>
+                {confirmDelete ? (
+                  /* ── Confirmation prompt ── */
+                  <div className="px-3 py-2.5 space-y-2">
+                    <p className="text-xs font-medium" style={{ color: "var(--app-text-primary)" }}>
+                      ¿Eliminar &ldquo;{notebook.name}&rdquo;?
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--app-text-muted)" }}>
+                      Las notas dentro se moverán a la papelera. Los sub-notebooks también serán eliminados.
+                    </p>
+                    <div className="flex gap-1.5 pt-0.5">
+                      <button
+                        className="flex-1 text-xs px-2 py-1 rounded transition-colors"
+                        style={{
+                          backgroundColor: "var(--app-hover)",
+                          color: "var(--app-text-secondary)",
+                        }}
+                        onMouseEnter={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
+                        }
+                        onMouseLeave={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                        }
+                        onClick={() => { setConfirmDelete(false); setMenuOpen(false); }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        className="flex-1 text-xs px-2 py-1 rounded transition-colors bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                        onClick={() => {
+                          onDelete?.(notebook.id);
+                          setConfirmDelete(false);
+                          setMenuOpen(false);
+                        }}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal menu ── */
+                  <div className="py-1">
+                    {onNewChild && (
+                      <button
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: "var(--app-text-secondary)" }}
+                        onMouseEnter={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                        }
+                        onMouseLeave={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+                        }
+                        onClick={handleAddChild}
+                      >
+                        Nuevo sub-notebook
+                      </button>
+                    )}
+                    {onRename && (
+                      <button
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: "var(--app-text-secondary)" }}
+                        onMouseEnter={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                        }
+                        onMouseLeave={(e) =>
+                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+                        }
+                        onClick={() => { setRenaming(true); setMenuOpen(false); }}
+                      >
+                        Renombrar
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                        onClick={() => setConfirmDelete(true)}
+                      >
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -193,15 +272,45 @@ function NotebookItem({
         )}
       </div>
 
-      {hasChildren && expanded && (
+      {/* Children tree */}
+      {(hasChildren || addingChild) && expanded && (
         <NotebookTree
-          notebooks={notebook.children!}
+          notebooks={notebook.children ?? []}
           selectedId={selectedId}
           onSelect={onSelect}
           onRename={onRename}
           onDelete={onDelete}
+          onNewChild={onNewChild}
           depth={depth + 1}
         />
+      )}
+
+      {/* Inline new-child input — must be inside a <ul> to keep valid HTML */}
+      {addingChild && (
+        <ul className="space-y-0.5">
+          <li style={{ paddingLeft: `${8 + (depth + 1) * 12}px` }}>
+            <div className="flex items-center gap-1 py-1 pr-1">
+              <span className="text-xs shrink-0" style={{ color: "var(--app-text-muted)" }}>📓</span>
+              <input
+                ref={childInputRef}
+                autoFocus
+                value={childName}
+                onChange={(e) => setChildName(e.target.value)}
+                onBlur={handleChildSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleChildSubmit();
+                  if (e.key === "Escape") { setAddingChild(false); setChildName(""); }
+                }}
+                placeholder="Nombre del notebook"
+                className="flex-1 text-xs rounded px-1 py-0.5 outline-none border border-indigo-500 min-w-0"
+                style={{
+                  backgroundColor: "var(--app-bg-input)",
+                  color: "var(--app-text-primary)",
+                }}
+              />
+            </div>
+          </li>
+        </ul>
       )}
     </li>
   );

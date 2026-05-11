@@ -56,6 +56,39 @@ export async function DELETE(_req: Request, { params }: Params) {
   });
   if (!existing) return apiError(404, "Notebook no encontrado");
 
-  await prisma.notebook.delete({ where: { id } });
+  // Collect the notebook and all its descendants recursively.
+  const allIds = await collectNotebookIds(id, session.user.id);
+
+  // 1. Move every note in these notebooks to the trash.
+  await prisma.note.updateMany({
+    where: { notebookId: { in: allIds }, userId: session.user.id },
+    data: { isTrashed: true, notebookId: null },
+  });
+
+  // 2. Detach all notebooks from their parents so the self-referencing FK
+  //    doesn't block deletion (SQLite doesn't cascade on this relation).
+  await prisma.notebook.updateMany({
+    where: { id: { in: allIds }, userId: session.user.id },
+    data: { parentId: null },
+  });
+
+  // 3. Delete every notebook in the subtree (now safe — no FK references left).
+  await prisma.notebook.deleteMany({
+    where: { id: { in: allIds }, userId: session.user.id },
+  });
+
   return apiSuccess({ success: true });
+}
+
+/** Recursively collect a notebook's ID plus all descendant IDs. */
+async function collectNotebookIds(rootId: string, userId: string): Promise<string[]> {
+  const ids: string[] = [rootId];
+  const children = await prisma.notebook.findMany({
+    where: { parentId: rootId, userId },
+    select: { id: true },
+  });
+  for (const child of children) {
+    ids.push(...(await collectNotebookIds(child.id, userId)));
+  }
+  return ids;
 }
