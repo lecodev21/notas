@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  notebooks    Notebook[]
+  notes        Note[]
+  tags         Tag[]
+}
+
+model Notebook {
+  id        String     @id @default(cuid())
+  name      String
+  userId    String
+  parentId  String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Notebook?  @relation("NotebookChildren", fields: [parentId], references: [id])
+  children  Notebook[] @relation("NotebookChildren")
+  notes     Note[]
+
+  @@index([userId])
+  @@index([parentId])
+}
+
+model Note {
+  id         String    @id @default(cuid())
+  title      String    @default("Untitled")
+  body       String    @default("")
+  userId     String
+  notebookId String?
+  isPinned   Boolean   @default(false)
+  isTrashed  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notebook   Notebook? @relation(fields: [notebookId], references: [id], onDelete: SetNull)
+  noteTags   NoteTag[]
+
+  @@index([userId])
+  @@index([notebookId])
+  @@index([updatedAt])
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String
+  color     String?   @default("#6366f1")
+  userId    String
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteTags  NoteTag[]
+
+  @@unique([name, userId])
+  @@index([userId])
+}
+
+model NoteTag {
+  noteId     String
+  tagId      String
+  assignedAt DateTime @default(now())
+
+  note       Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, tagId])
+}
