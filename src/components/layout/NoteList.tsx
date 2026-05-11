@@ -1,10 +1,52 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NoteCard } from "@/components/notes/NoteCard";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
+
+// ── Sort order ─────────────────────────────────────────────────────────────
+
+type SortKey = "updatedAt" | "createdAt" | "titleAsc" | "titleDesc";
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "updatedAt",  label: "Última modificación" },
+  { key: "createdAt",  label: "Fecha de creación"   },
+  { key: "titleAsc",   label: "Título A → Z"         },
+  { key: "titleDesc",  label: "Título Z → A"         },
+];
+
+const LS_KEY = "inkdrop-sort";
+
+function readSort(): SortKey {
+  try {
+    const v = localStorage.getItem(LS_KEY);
+    if (v && SORT_OPTIONS.some((o) => o.key === v)) return v as SortKey;
+  } catch {}
+  return "updatedAt";
+}
+
+function sortNotes<T extends { title: string; updatedAt: Date | string; createdAt: Date | string }>(
+  notes: T[],
+  key: SortKey,
+): T[] {
+  const copy = [...notes];
+  switch (key) {
+    case "updatedAt":
+      return copy.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+    case "createdAt":
+      return copy.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    case "titleAsc":
+      return copy.sort((a, b) =>
+        a.title.localeCompare(b.title, "es", { sensitivity: "base" })
+      );
+    case "titleDesc":
+      return copy.sort((a, b) =>
+        b.title.localeCompare(a.title, "es", { sensitivity: "base" })
+      );
+  }
+}
 
 type NoteWithTags = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -33,6 +75,19 @@ export function NoteList({
   const [searchValue, setSearchValue] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Sort state (persisted) ───────────────────────────────────────────────
+  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
+
+  // Read from localStorage after mount (avoids SSR mismatch)
+  useEffect(() => { setSortKey(readSort()); }, []);
+
+  function handleSortChange(key: SortKey) {
+    setSortKey(key);
+    try { localStorage.setItem(LS_KEY, key); } catch {}
+  }
+
+  const sortedNotes = useMemo(() => sortNotes(notes, sortKey), [notes, sortKey]);
+
   function handleSearchChange(value: string) {
     setSearchValue(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -59,12 +114,15 @@ export function NoteList({
           >
             {contextLabel}
           </span>
-          <Button size="icon" variant="ghost" onClick={onNewNote} title="Nueva nota">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </Button>
+          <div className="flex items-center gap-0.5">
+            <SortMenu sortKey={sortKey} onChange={handleSortChange} />
+            <Button size="icon" variant="ghost" onClick={onNewNote} title="Nueva nota">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </Button>
+          </div>
         </div>
 
         {/* Search */}
@@ -119,7 +177,7 @@ export function NoteList({
           </div>
         ) : (
           <div className="space-y-0.5">
-            {notes.map((note) => (
+            {sortedNotes.map((note) => (
               <NoteCard
                 key={note.id}
                 note={note}
@@ -139,6 +197,91 @@ export function NoteList({
           {notes.length} nota{notes.length !== 1 ? "s" : ""}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ── SortMenu ───────────────────────────────────────────────────────────────
+
+function SortMenu({
+  sortKey,
+  onChange,
+}: {
+  sortKey: SortKey;
+  onChange: (key: SortKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Ordenar notas"
+        className="flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-colors"
+        style={{ color: open ? "var(--app-text-primary)" : "var(--app-text-muted)" }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)";
+          (e.currentTarget as HTMLButtonElement).style.color = "var(--app-text-primary)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+          (e.currentTarget as HTMLButtonElement).style.color = open
+            ? "var(--app-text-primary)"
+            : "var(--app-text-muted)";
+        }}
+      >
+        {/* Sort icon */}
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-7 z-30 rounded-lg shadow-xl py-1 w-52"
+          style={{
+            backgroundColor: "var(--app-bg-menu)",
+            border: "1px solid var(--app-border-strong)",
+          }}
+        >
+          {SORT_OPTIONS.map((opt) => {
+            const active = sortKey === opt.key;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => { onChange(opt.key); setOpen(false); }}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors"
+                style={{ color: active ? "var(--app-text-primary)" : "var(--app-text-secondary)" }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+                }}
+              >
+                <span>{opt.label}</span>
+                {active && (
+                  <svg className="w-3 h-3 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
