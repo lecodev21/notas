@@ -26,6 +26,8 @@ interface EditorPanelProps {
   onTrash?: (id: string) => void;
   onRestore?: (id: string) => void;
   onDeletePermanent?: (id: string) => void;
+  /** Create a brand-new tag and return it (called when the user types a name that doesn't exist yet) */
+  onCreateTag?: (name: string) => Promise<Tag | null>;
 }
 
 type ViewMode = "edit" | "split" | "preview";
@@ -42,8 +44,9 @@ export function EditorPanel({
   onTrash,
   onRestore,
   onDeletePermanent,
+  onCreateTag,
 }: EditorPanelProps) {
-  const [mode, setMode] = useState<ViewMode>("split");
+  const [mode, setMode] = useState<ViewMode>("edit");
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -368,26 +371,14 @@ export function EditorPanel({
               📓 {note.notebook.name}
             </span>
           )}
-          {note.noteTags.map(({ tag }) => (
-            <span
-              key={tag.id}
-              className="text-xs px-2 py-0.5 rounded-full"
-              style={{
-                backgroundColor: tag.color + "22",
-                color: tag.color ?? "#6366f1",
-                border: `1px solid ${tag.color ?? "#6366f1"}33`,
-              }}
-            >
-              {tag.name}
-            </span>
-          ))}
-          {!note.isTrashed && availableTags.length > 0 && (
-            <TagPicker
-              note={note}
-              availableTags={availableTags}
-              onUpdateTags={(tagIds) => onUpdate(note.id, { tagIds })}
-            />
-          )}
+          {note.notebook && <span style={{ color: "var(--app-border-strong)" }}>·</span>}
+          <TagInput
+            currentTags={note.noteTags.map(({ tag }) => tag)}
+            availableTags={availableTags}
+            disabled={note.isTrashed}
+            onUpdateTags={(tagIds) => onUpdate(note.id, { tagIds })}
+            onCreateTag={onCreateTag}
+          />
         </div>
       </div>
 
@@ -460,99 +451,184 @@ export function EditorPanel({
   );
 }
 
-function TagPicker({
-  note,
+function TagInput({
+  currentTags,
   availableTags,
+  disabled = false,
   onUpdateTags,
+  onCreateTag,
 }: {
-  note: NoteWithRelations;
+  currentTags: Tag[];
   availableTags: Tag[];
+  disabled?: boolean;
   onUpdateTags: (tagIds: string[]) => Promise<void>;
+  onCreateTag?: (name: string) => Promise<Tag | null>;
 }) {
+  const [inputValue, setInputValue] = useState("");
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const currentTagIds = note.noteTags.map(({ tag }) => tag.id);
-
+  // Close dropdown on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setInputValue("");
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  async function toggle(tagId: string) {
-    const next = currentTagIds.includes(tagId)
-      ? currentTagIds.filter((id) => id !== tagId)
-      : [...currentTagIds, tagId];
-    setSaving(true);
-    await onUpdateTags(next);
-    setSaving(false);
+  const currentIds = currentTags.map((t) => t.id);
+
+  // Available tags not yet assigned, filtered by what the user is typing
+  const suggestions = availableTags.filter(
+    (t) =>
+      !currentIds.includes(t.id) &&
+      t.name.toLowerCase().includes(inputValue.toLowerCase())
+  );
+
+  const query = inputValue.trim();
+  const exactMatch = availableTags.find(
+    (t) => t.name.toLowerCase() === query.toLowerCase()
+  );
+  const canCreate = !!onCreateTag && query.length > 0 && !exactMatch;
+
+  async function addTag(tag: Tag) {
+    setBusy(true);
+    await onUpdateTags([...currentIds, tag.id]);
+    setBusy(false);
+    setInputValue("");
+    setOpen(false);
+    inputRef.current?.focus();
+  }
+
+  async function removeTag(tagId: string) {
+    setBusy(true);
+    await onUpdateTags(currentIds.filter((id) => id !== tagId));
+    setBusy(false);
+  }
+
+  async function handleCommit() {
+    if (!query) return;
+    if (exactMatch && !currentIds.includes(exactMatch.id)) {
+      await addTag(exactMatch);
+      return;
+    }
+    if (canCreate) {
+      setBusy(true);
+      const newTag = await onCreateTag!(query);
+      if (newTag) await onUpdateTags([...currentIds, newTag.id]);
+      setBusy(false);
+      setInputValue("");
+      setOpen(false);
+      inputRef.current?.focus();
+    }
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-xs transition-colors px-1.5 py-0.5 rounded"
-        style={{
-          color: "var(--app-text-muted)",
-          border: "1px solid var(--app-border-strong)",
-        }}
-        title="Asignar tags"
-      >
-        {saving ? (
-          <Spinner className="w-3 h-3" />
-        ) : (
-          <>
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a2 2 0 012-2z" />
-            </svg>
-            <span>Tags</span>
-          </>
-        )}
-      </button>
+    <div ref={containerRef} className="relative flex flex-wrap items-center gap-1.5">
+      {/* Assigned tag chips */}
+      {currentTags.map((tag) => (
+        <span
+          key={tag.id}
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+          style={{
+            backgroundColor: (tag.color ?? "#6366f1") + "22",
+            color: tag.color ?? "#6366f1",
+            border: `1px solid ${tag.color ?? "#6366f1"}33`,
+          }}
+        >
+          {tag.name}
+          {!disabled && (
+            <button
+              onClick={() => removeTag(tag.id)}
+              className="leading-none opacity-60 hover:opacity-100 transition-opacity"
+              title={`Quitar tag "${tag.name}"`}
+            >
+              ×
+            </button>
+          )}
+        </span>
+      ))}
 
-      {open && (
+      {/* Inline input (hidden when note is trashed) */}
+      {!disabled && (
+        <div className="flex items-center gap-1">
+          {busy && <Spinner className="w-3 h-3" />}
+          <input
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => { setInputValue(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); handleCommit(); }
+              if (e.key === "Escape") { setInputValue(""); setOpen(false); }
+              if (e.key === "Backspace" && !inputValue && currentTags.length > 0) {
+                removeTag(currentTags[currentTags.length - 1].id);
+              }
+            }}
+            placeholder={currentTags.length === 0 ? "Agregar tag..." : "＋ tag"}
+            className="bg-transparent text-xs outline-none"
+            style={{
+              color: "var(--app-text-muted)",
+              minWidth: currentTags.length === 0 ? "90px" : "52px",
+              width: `${Math.max(inputValue.length + 1, currentTags.length === 0 ? 10 : 5)}ch`,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Suggestions dropdown */}
+      {open && (suggestions.length > 0 || canCreate) && (
         <div
-          className="absolute left-0 top-7 z-20 rounded-lg shadow-xl py-1 w-44 max-h-56 overflow-y-auto"
+          className="absolute left-0 top-full mt-1 z-20 rounded-lg shadow-xl py-1 w-48 max-h-52 overflow-y-auto"
           style={{
             backgroundColor: "var(--app-bg-menu)",
             border: "1px solid var(--app-border-strong)",
           }}
         >
-          {availableTags.map((tag) => {
-            const active = currentTagIds.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                onClick={() => toggle(tag.id)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
-                style={{ color: active ? "var(--app-text-primary)" : "var(--app-text-secondary)" }}
-                onMouseEnter={(e) => {
-                  if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
-                }}
-              >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: tag.color ?? "#6366f1" }}
-                />
-                <span className="flex-1 text-left truncate">{tag.name}</span>
-                {active && (
-                  <svg className="w-3 h-3 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
+          {suggestions.map((tag) => (
+            <button
+              key={tag.id}
+              onClick={() => addTag(tag)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+              style={{ color: "var(--app-text-secondary)" }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+              }
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: tag.color ?? "#6366f1" }}
+              />
+              {tag.name}
+            </button>
+          ))}
+
+          {canCreate && (
+            <button
+              onClick={handleCommit}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+              style={{ color: "var(--app-text-muted)" }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+              }
+            >
+              <span className="text-indigo-400 font-bold">+</span>
+              Crear &ldquo;{query}&rdquo;
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -12,7 +12,7 @@ const fetcher = (url: string) =>
   });
 
 export function useTags() {
-  const { data, error, isLoading } = useSWR<{ tags: TagWithCount[] }>(
+  const { data, error, isLoading, mutate } = useSWR<{ tags: TagWithCount[] }>(
     "/api/tags",
     fetcher
   );
@@ -20,6 +20,7 @@ export function useTags() {
     tags: data?.tags ?? [],
     loading: isLoading,
     error,
+    mutateTags: () => mutate(),
   };
 }
 
@@ -32,7 +33,8 @@ export function useCreateTag() {
     });
     if (!res.ok) return null;
     const { tag } = await res.json();
-    await globalMutate("/api/tags");
+    // Do NOT revalidate here — the caller should revalidate after the tag
+    // has been assigned to a note, so the count reflects the real state.
     return tag as Tag;
   }
 

@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
 import { EditorPanel } from "./EditorPanel";
-import { Modal } from "@/components/ui/Modal";
-import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
 import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from "@/hooks/useNotes";
 import { useNotebooks, useCreateNotebook, useUpdateNotebook, useDeleteNotebook } from "@/hooks/useNotebooks";
 import { useTags, useCreateTag, useDeleteTag } from "@/hooks/useTags";
 import { useSearch } from "@/hooks/useSearch";
+
 
 type ViewType = "all" | "pinned" | "trash" | "notebook" | "tag";
 
@@ -20,8 +18,6 @@ interface AppShellProps {
 }
 
 export function AppShell({ initialNoteId }: AppShellProps) {
-  const router = useRouter();
-
   // State
   const [view, setView] = useState<ViewType>("all");
   const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null);
@@ -32,12 +28,6 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
 
-  // Modals
-  const [notebookModalOpen, setNotebookModalOpen] = useState(false);
-  const [tagModalOpen, setTagModalOpen] = useState(false);
-  const [newNotebookName, setNewNotebookName] = useState("");
-  const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState("#6366f1");
 
   // Data hooks
   const notesFilter = buildFilter(view, selectedNotebook, selectedTag);
@@ -45,7 +35,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const { notes: searchResults, loading: searchLoading } = useSearch(searchQuery);
   const { note: selectedNote, loading: noteLoading } = useNotes({ id: selectedNoteId });
   const { notebooks } = useNotebooks();
-  const { tags } = useTags();
+  const { tags, mutateTags } = useTags();
 
   const { createNote } = useCreateNote();
   const { createNotebook } = useCreateNotebook();
@@ -104,17 +94,46 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     });
     if (note) {
       setSelectedNoteId(note.id);
-      router.push(`/notes/${note.id}`);
+      // Update the URL without triggering Next.js navigation — this keeps
+      // the AppShell mounted so the notebook/view context is preserved.
+      window.history.replaceState(null, "", `/notes/${note.id}`);
     }
   }
 
   async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[] }) {
+    // Before updating, figure out which tags are being removed from this note.
+    // If a removed tag ends up with 0 notes after this update, delete it.
+    let removedTagIds: string[] = [];
+    if (data.tagIds !== undefined) {
+      const currentTagIds = activeNote?.noteTags.map(({ tag }) => tag.id) ?? [];
+      removedTagIds = currentTagIds.filter((id) => !data.tagIds!.includes(id));
+    }
+
     await updateNote(id, data);
+
+    // Auto-delete tags that are now orphaned (count was 1 → this was the only note)
+    for (const tagId of removedTagIds) {
+      const tag = tags.find((t) => t.id === tagId);
+      if (tag && tag._count.noteTags <= 1) {
+        await deleteTag(tagId);
+        // If we were filtering by this tag, reset the view
+        if (selectedTag === tag.name) {
+          setView("all");
+          setSelectedTag(null);
+        }
+      }
+    }
+
+    // Revalidate tag counts after any tag assignment/removal (and after
+    // auto-deletes), so the sidebar always shows the correct number.
+    if (data.tagIds !== undefined) {
+      await mutateTags();
+    }
   }
 
   function handleSelectNote(id: string) {
     setSelectedNoteId(id);
-    router.push(`/notes/${id}`);
+    window.history.replaceState(null, "", `/notes/${id}`);
   }
 
   function handleSelectView(v: "all" | "pinned" | "trash") {
@@ -141,20 +160,6 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setSearchQuery("");
   }
 
-  async function handleCreateNotebook() {
-    if (!newNotebookName.trim()) return;
-    await createNotebook({ name: newNotebookName.trim() });
-    setNewNotebookName("");
-    setNotebookModalOpen(false);
-  }
-
-  async function handleCreateTag() {
-    if (!newTagName.trim()) return;
-    await createTag({ name: newTagName.trim(), color: newTagColor });
-    setNewTagName("");
-    setTagModalOpen(false);
-  }
-
   async function handleTrash(id: string) {
     await updateNote(id, { isTrashed: true });
     if (selectedNoteId === id) setSelectedNoteId(null);
@@ -173,6 +178,10 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     await updateNote(id, { isPinned: !isPinned });
   }
 
+  async function handleNewSubNotebook(parentId: string, name: string) {
+    await createNotebook({ name, parentId });
+  }
+
   async function handleRenameNotebook(id: string, name: string) {
     await updateNotebook(id, { name });
   }
@@ -182,15 +191,6 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     if (selectedNotebook === id) {
       setView("all");
       setSelectedNotebook(null);
-    }
-  }
-
-  async function handleDeleteTag(id: string) {
-    await deleteTag(id);
-    const tag = tags.find((t) => t.id === id);
-    if (tag && selectedTag === tag.name) {
-      setView("all");
-      setSelectedTag(null);
     }
   }
 
@@ -216,11 +216,10 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             onSelectView={handleSelectView}
             onSelectNotebook={handleSelectNotebook}
             onSelectTag={handleSelectTag}
-            onNewNotebook={() => setNotebookModalOpen(true)}
-            onNewTag={() => setTagModalOpen(true)}
+            onNewNotebook={(name) => createNotebook({ name })}
+            onNewSubNotebook={handleNewSubNotebook}
             onRenameNotebook={handleRenameNotebook}
             onDeleteNotebook={handleDeleteNotebook}
-            onDeleteTag={handleDeleteTag}
           />
         </div>
       </div>
@@ -252,6 +251,11 @@ export function AppShell({ initialNoteId }: AppShellProps) {
           focusMode={focusMode}
           onToggleFocusMode={() => setFocusMode((v) => !v)}
           onUpdate={handleUpdate}
+          onCreateTag={async (name) => {
+            const TAG_PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16"];
+            const color = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
+            return createTag({ name, color });
+          }}
           onTogglePin={handleTogglePin}
           onTrash={handleTrash}
           onRestore={handleRestore}
@@ -259,64 +263,6 @@ export function AppShell({ initialNoteId }: AppShellProps) {
         />
       </div>
 
-      {/* New Notebook Modal */}
-      <Modal
-        open={notebookModalOpen}
-        onClose={() => setNotebookModalOpen(false)}
-        title="Nuevo notebook"
-      >
-        <div className="space-y-3">
-          <Input
-            placeholder="Nombre del notebook"
-            value={newNotebookName}
-            onChange={(e) => setNewNotebookName(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => e.key === "Enter" && handleCreateNotebook()}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setNotebookModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleCreateNotebook}>
-              Crear
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* New Tag Modal */}
-      <Modal
-        open={tagModalOpen}
-        onClose={() => setTagModalOpen(false)}
-        title="Nuevo tag"
-      >
-        <div className="space-y-3">
-          <Input
-            placeholder="Nombre del tag"
-            value={newTagName}
-            onChange={(e) => setNewTagName(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => e.key === "Enter" && handleCreateTag()}
-          />
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400">Color:</label>
-            <input
-              type="color"
-              value={newTagColor}
-              onChange={(e) => setNewTagColor(e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer bg-transparent border border-white/10"
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setTagModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleCreateTag}>
-              Crear
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

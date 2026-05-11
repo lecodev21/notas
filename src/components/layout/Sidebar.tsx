@@ -1,12 +1,12 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
-import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { NotebookTree } from "@/components/notebooks/NotebookTree";
 import type { Notebook, Tag } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
+import { useState } from "react";
 
 type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[] };
 type TagWithCount = Tag & { _count: { noteTags: number } };
@@ -20,11 +20,10 @@ interface SidebarProps {
   onSelectView: (view: "all" | "pinned" | "trash") => void;
   onSelectNotebook: (id: string) => void;
   onSelectTag: (name: string) => void;
-  onNewNotebook: () => void;
-  onNewTag: () => void;
+  onNewNotebook: (name: string) => void;
+  onNewSubNotebook?: (parentId: string, name: string) => void;
   onRenameNotebook?: (id: string, name: string) => void;
   onDeleteNotebook?: (id: string) => void;
-  onDeleteTag?: (id: string) => void;
 }
 
 const NAV_ITEMS = [
@@ -43,13 +42,14 @@ export function Sidebar({
   onSelectNotebook,
   onSelectTag,
   onNewNotebook,
-  onNewTag,
+  onNewSubNotebook,
   onRenameNotebook,
   onDeleteNotebook,
-  onDeleteTag,
 }: SidebarProps) {
   const { data: session } = useSession();
   const { theme, toggleTheme } = useTheme();
+  const [addingNotebook, setAddingNotebook] = useState(false);
+  const [newNotebookName, setNewNotebookName] = useState("");
 
   return (
     <aside
@@ -121,44 +121,78 @@ export function Sidebar({
             >
               Notebooks
             </span>
-            <Button size="icon" onClick={onNewNotebook} title="Nuevo notebook">
+            <Button
+              size="icon"
+              onClick={() => { setAddingNotebook(true); setNewNotebookName(""); }}
+              title="Nuevo notebook"
+            >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </Button>
           </div>
-          {notebooks.length === 0 ? (
-            <p
-              className="text-xs px-2 py-1"
-              style={{ color: "var(--app-text-faint)" }}
-            >
-              Sin notebooks aún
-            </p>
-          ) : (
+
+          {notebooks.length > 0 && (
             <NotebookTree
               notebooks={notebooks}
               selectedId={selectedNotebook}
               onSelect={onSelectNotebook}
               onRename={onRenameNotebook}
               onDelete={onDeleteNotebook}
+              onNewChild={onNewSubNotebook}
             />
+          )}
+
+          {/* Inline new-notebook input */}
+          {addingNotebook && (
+            <div className="flex items-center gap-1 px-2 py-1">
+              <span className="text-xs shrink-0" style={{ color: "var(--app-text-muted)" }}>📓</span>
+              <input
+                autoFocus
+                value={newNotebookName}
+                onChange={(e) => setNewNotebookName(e.target.value)}
+                onBlur={() => {
+                  if (newNotebookName.trim()) onNewNotebook(newNotebookName.trim());
+                  setAddingNotebook(false);
+                  setNewNotebookName("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newNotebookName.trim()) {
+                    onNewNotebook(newNotebookName.trim());
+                    setAddingNotebook(false);
+                    setNewNotebookName("");
+                  }
+                  if (e.key === "Escape") {
+                    setAddingNotebook(false);
+                    setNewNotebookName("");
+                  }
+                }}
+                placeholder="Nombre del notebook"
+                className="flex-1 text-xs rounded px-1 py-0.5 outline-none border border-indigo-500 min-w-0"
+                style={{
+                  backgroundColor: "var(--app-bg-input)",
+                  color: "var(--app-text-primary)",
+                }}
+              />
+            </div>
+          )}
+
+          {notebooks.length === 0 && !addingNotebook && (
+            <p className="text-xs px-2 py-1" style={{ color: "var(--app-text-faint)" }}>
+              Sin notebooks aún
+            </p>
           )}
         </div>
 
         {/* Tags */}
         <div>
-          <div className="flex items-center justify-between px-2 mb-1">
+          <div className="flex items-center px-2 mb-1">
             <span
               className="text-[10px] font-semibold uppercase tracking-wider"
               style={{ color: "var(--app-text-muted)" }}
             >
               Tags
             </span>
-            <Button size="icon" onClick={onNewTag} title="Nuevo tag">
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </Button>
           </div>
           {tags.length === 0 ? (
             <p
@@ -175,7 +209,6 @@ export function Sidebar({
                   tag={tag}
                   isSelected={selectedTag === tag.name}
                   onSelect={() => onSelectTag(tag.name)}
-                  onDelete={onDeleteTag ? () => onDeleteTag(tag.id) : undefined}
                 />
               ))}
             </ul>
@@ -248,105 +281,42 @@ function TagItem({
   tag,
   isSelected,
   onSelect,
-  onDelete,
 }: {
   tag: TagWithCount;
   isSelected: boolean;
   onSelect: () => void;
-  onDelete?: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
-
   return (
     <li>
-      <div
-        className="group flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors"
+      <button
+        onClick={onSelect}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors text-left"
         style={{
           backgroundColor: isSelected ? "rgba(99,102,241,0.15)" : undefined,
         }}
         onMouseEnter={(e) => {
           if (!isSelected)
-            (e.currentTarget as HTMLDivElement).style.backgroundColor =
-              "var(--app-hover)";
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
         }}
         onMouseLeave={(e) => {
           if (!isSelected)
-            (e.currentTarget as HTMLDivElement).style.backgroundColor = "";
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
         }}
       >
-        <button
-          onClick={onSelect}
-          className="flex-1 flex items-center gap-2 text-xs text-left min-w-0"
+        <span
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: tag.color ?? "#6366f1" }}
+        />
+        <span
+          className="truncate"
+          style={{ color: isSelected ? "#6366f1" : "var(--app-text-secondary)" }}
         >
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: tag.color ?? "#6366f1" }}
-          />
-          <span
-            className="truncate"
-            style={{ color: isSelected ? "#6366f1" : "var(--app-text-secondary)" }}
-          >
-            {tag.name}
-          </span>
-          <span
-            className="ml-auto"
-            style={{ color: "var(--app-text-faint)" }}
-          >
-            {tag._count.noteTags}
-          </span>
-        </button>
-
-        {onDelete && (
-          <div className="relative" ref={menuRef}>
-            <button
-              className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center transition-all text-xs"
-              style={{ color: "var(--app-text-muted)" }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.color = "#f87171")
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.color =
-                  "var(--app-text-muted)")
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen((v) => !v);
-              }}
-            >
-              ×
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 top-5 z-10 rounded-lg shadow-xl py-1 w-28"
-                style={{
-                  backgroundColor: "var(--app-bg-menu)",
-                  border: "1px solid var(--app-border-strong)",
-                }}
-              >
-                <button
-                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                  onClick={() => {
-                    onDelete();
-                    setMenuOpen(false);
-                  }}
-                >
-                  Eliminar tag
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+          {tag.name}
+        </span>
+        <span className="ml-auto" style={{ color: "var(--app-text-faint)" }}>
+          {tag._count.noteTags}
+        </span>
+      </button>
     </li>
   );
 }
