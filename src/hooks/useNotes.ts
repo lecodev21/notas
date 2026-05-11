@@ -95,16 +95,18 @@ export function useUpdateNote() {
     if (!res.ok) return null;
     const { note } = await res.json();
 
-    // Update the single-note cache optimistically WITHOUT re-fetching.
-    // Re-fetching would overwrite the editor's content mid-typing and cause
-    // the flicker/text-loss bug. The editor keeps its own local state.
+    // Update the single-note cache without re-fetching.
     await globalMutate(`/api/notes/${id}`, { note }, { revalidate: false });
 
-    // Only revalidate the list (title/pin/trash changes need to reflect there)
+    // Patch each list cache in-place with the updated note — no network
+    // request, no clearing of the cache, so the note list never flickers.
     await globalMutate(
       (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
-      undefined,
-      { revalidate: true }
+      (current: { notes: NoteWithRelations[] } | undefined) => {
+        if (!current) return current;
+        return { notes: current.notes.map((n) => (n.id === id ? note : n)) };
+      },
+      { revalidate: false }
     );
 
     return note as NoteWithRelations;
