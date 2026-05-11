@@ -8,6 +8,7 @@ import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import type { EditorView } from "@codemirror/view";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
+import { FindReplaceBar } from "@/components/editor/FindReplaceBar";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -48,10 +49,29 @@ export function EditorPanel({
 }: EditorPanelProps) {
   const [mode, setMode] = useState<ViewMode>("edit");
   const [saving, setSaving] = useState(false);
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Shared with MarkdownToolbar so toolbar buttons can dispatch transactions
   const editorViewRef = useRef<EditorView | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus the title input whenever a brand-new (empty) note is loaded.
+  // We detect "new note" by its default title and empty body so we never need
+  // an external prop — the check is local and fires once per note id.
+  useEffect(() => {
+    if (!note) return;
+    if (note.title !== "Sin título" || note.body !== "") return;
+    let raf1: number, raf2: number;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        titleInputRef.current?.focus();
+        titleInputRef.current?.select();
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note?.id]);
 
   // ── Readable line-length toggle ───────────────────────────────────────────
   const [readableWidth, setReadableWidth] = useState<boolean>(() => {
@@ -77,6 +97,7 @@ export function EditorPanel({
       setLocalTitle(note.title);
       prevNoteIdRef.current = note.id;
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      setFindReplaceOpen(false);   // close stale search when switching notes
     }
   }, [note]);
 
@@ -355,6 +376,7 @@ export function EditorPanel({
       {/* Title */}
       <div className="px-6 pt-4 pb-2 shrink-0">
         <input
+          ref={titleInputRef}
           key={note.id}
           value={localTitle}
           onChange={(e) => {
@@ -393,11 +415,27 @@ export function EditorPanel({
           <div
             ref={editorPanelRef}
             className={cn(
-              "overflow-hidden",
+              "overflow-hidden relative",
               mode === "split" ? "w-1/2" : "w-full",
             )}
             style={mode === "split" ? { borderRight: "1px solid var(--app-border)" } : undefined}
+            onKeyDown={(e) => {
+              // Ctrl/Cmd+F opens in-editor find-replace and prevents the global
+              // note-list search from activating (stopPropagation via nativeEvent
+              // stops bubbling past React's root to the document listener).
+              if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
+                e.preventDefault();
+                e.nativeEvent.stopImmediatePropagation();
+                setFindReplaceOpen(true);
+              }
+            }}
           >
+            {findReplaceOpen && (
+              <FindReplaceBar
+                viewRef={editorViewRef}
+                onClose={() => setFindReplaceOpen(false)}
+              />
+            )}
             <MarkdownEditor
               key={note.id}
               value={localBody}
@@ -424,6 +462,27 @@ export function EditorPanel({
                 body={localBody}
                 onToggleTask={note.isTrashed ? undefined : (idx) => {
                   const next = toggleTaskAtIndex(localBody, idx);
+                  // Dispatch a targeted change to CodeMirror so it doesn't do
+                  // a full doc replacement (which would reset scroll to top).
+                  // @uiw/react-codemirror skips re-dispatching when value ===
+                  // doc.toString(), so setting localBody afterwards is safe.
+                  const view = editorViewRef.current;
+                  if (view && !view.isDestroyed) {
+                    const old = view.state.doc.toString();
+                    if (old !== next) {
+                      // Find the minimal changed range so CodeMirror treats it
+                      // as a small edit instead of a full replacement.
+                      let from = 0;
+                      while (from < old.length && from < next.length && old[from] === next[from]) from++;
+                      let oldTo = old.length;
+                      let newTo = next.length;
+                      while (oldTo > from && newTo > from && old[oldTo - 1] === next[newTo - 1]) {
+                        oldTo--;
+                        newTo--;
+                      }
+                      view.dispatch({ changes: { from, to: oldTo, insert: next.slice(from, newTo) } });
+                    }
+                  }
                   setLocalBody(next);
                   debouncedSave("body", next);
                 }}
@@ -637,14 +696,33 @@ function TagInput({
 
 /** Toggle the nth task checkbox (0-based) in a markdown body string. */
 function toggleTaskAtIndex(body: string, idx: number): string {
+  // Only count checkboxes that will actually render as DOM <input>s:
+  //   • GFM task list items  →  lines like "- [ ] text" or "  * [x] text"
+  //   • Table rows           →  lines that contain a pipe character
+  // Plain paragraph text that happens to contain [x] is intentionally ignored
+  // so the index matches the DOM order produced by MarkdownPreview.
   let count = 0;
-  return body.replace(/^(- \[)([ xX])(\] )/gm, (match, open, check, close) => {
-    if (count++ === idx) {
-      const isDone = check !== " ";
-      return `${open}${isDone ? " " : "x"}${close}`;
+  const lines = body.split("\n");
+  return lines.map((line) => {
+    // GFM task list item: optional indent, list marker, space, checkbox
+    if (/^[ \t]{0,3}[-*+] \[[ xX]\] /.test(line)) {
+      return line.replace(
+        /^([ \t]{0,3}[-*+] \[)([ xX])(\] )/,
+        (m, open, check, close) => {
+          if (count++ === idx) return `${open}${check !== " " ? " " : "x"}${close}`;
+          return m;
+        }
+      );
     }
-    return match;
-  });
+    // Table row: any line containing |
+    if (line.includes("|")) {
+      return line.replace(/(\[)([ xX])(\])(?!\()/g, (m, open, check, close) => {
+        if (count++ === idx) return `${open}${check !== " " ? " " : "x"}${close}`;
+        return m;
+      });
+    }
+    return line;
+  }).join("\n");
 }
 
 type PreviewComponent = React.ComponentType<{

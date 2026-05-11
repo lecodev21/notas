@@ -17,11 +17,14 @@ import { EditorSelection, EditorState, Prec, RangeSetBuilder } from "@codemirror
 import { syntaxTree } from "@codemirror/language";
 import {
   autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { useTheme } from "@/lib/theme";
 import { EMOJIS } from "./emojiData";
+import { findReplaceExtension } from "./findReplaceExtension";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -311,7 +314,7 @@ function toggleLink(view: EditorView): boolean {
 
   const { from, to } = effective;
   const text = state.sliceDoc(from, to);
-  const linkMatch = text.match(/^\[(.+)\]\((.+)\)$/s);
+  const linkMatch = text.match(/^\[(.+)\]\((.+)\)$/);
 
   if (linkMatch) {
     // Already a link → keep only the visible label
@@ -344,6 +347,82 @@ const formattingKeymap = Prec.high(
     { key: "Mod-Shift-c", run: (v) => toggleWrap(v, "```", "```", "código") },
   ]),
 );
+
+// ── Markdown pair auto-closing ────────────────────────────────────────────
+//
+// We replace basicSetup's closeBrackets (disabled below) with our own config
+// that extends the standard pairs with Markdown inline delimiters:
+//
+//   *  →  **   cursor between     (italic/bold delimiters)
+//   _  →  __   cursor between     (italic/bold delimiters)
+//   `  →  ``   cursor between     (inline code)
+//
+// The [ key is intercepted at Prec.high (keydown level, before the
+// closeBrackets inputHandler) to produce the full []() link skeleton
+// instead of plain [].  Selection wrapping also applies to all pairs:
+// selecting text and typing the delimiter wraps it.
+
+/**
+ * When the user types `*` with the cursor already sitting between an
+ * auto-closed `*│*` pair, closeBrackets would normally just skip the
+ * cursor past the closing `*` (IDE skip-over behaviour).  For Markdown
+ * we want `**│**` instead — matching Obsidian / Typora bold-delimiter UX.
+ *
+ * This binding runs at Prec.highest so it fires before closeBrackets'
+ * inputHandler.  When the conditions aren't met it returns false and lets
+ * closeBrackets handle everything else (single-pair insertion, selection
+ * wrapping, Backspace deletion, etc.).
+ */
+const boldPairKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: "*",
+      run(view) {
+        const { state } = view;
+        const sel = state.selection.main;
+        if (!sel.empty) return false; // let closeBrackets wrap the selection
+        const { from } = sel;
+        const prev = from > 0 ? state.doc.sliceString(from - 1, from) : "";
+        const next = state.doc.sliceString(from, from + 1);
+        // Only act when cursor is exactly between `*│*`
+        if (prev !== "*" || next !== "*") return false;
+        // Expand to `**│**`: insert one `*` before the closing star and
+        // another after it (positions are in the original document).
+        view.dispatch({
+          changes: [
+            { from,     insert: "*" }, // opening second `*`
+            { from: from + 1, insert: "*" }, // closing second `*`
+          ],
+          selection: EditorSelection.cursor(from + 1),
+        });
+        return true;
+      },
+    },
+  ])
+);
+
+/**
+ * Standard pairs + Markdown inline delimiters.
+ *
+ * closeBrackets() v6 accepts NO parameters — the brackets list is read from
+ * state.languageDataAt("closeBrackets", pos).  We inject our custom config
+ * through EditorState.languageData so it replaces the built-in defaults
+ * (which only cover `( [ { ' "`).
+ */
+const mdPairExtensions = [
+  // Provide the brackets config that closeBrackets() reads at runtime
+  EditorState.languageData.of(() => [
+    {
+      closeBrackets: {
+        brackets: ["(", "[", "{", "'", '"', "*", "_", "`"],
+      },
+    },
+  ]),
+  closeBrackets(),
+  // Backspace deletes an auto-inserted pair when cursor is between them
+  Prec.high(keymap.of(closeBracketsKeymap)),
+  boldPairKeymap,
+];
 
 // ── Emoji autocompletion ───────────────────────────────────────────────────
 // Triggered by `:xx` (colon + ≥2 chars).  Results are filtered by substring
@@ -420,38 +499,68 @@ const emojiCompletion = autocompletion({
 //     returns `true` so CodeMirror doesn't move the cursor there.
 
 /** Returns the document position of the `[ ]`/`[x]` span if `pos` falls on it,
- *  or null if the line at `pos` isn't a task list item. */
+ *  or null if the line at `pos` isn't a task list item or a table row with a
+ *  checkbox pattern. */
 function taskCheckboxRange(
   state: EditorState,
   pos: number,
 ): { from: number; to: number; checked: boolean } | null {
   const line = state.doc.lineAt(pos);
-  // Must start with `- [ ] ` or `- [x] ` (or `* [ ] ` etc.)
+
+  // ── GFM list task item: `- [ ] text` / `* [x] text` ──────────────────────
   const m = line.text.match(/^[-*+] \[([ xX])\] /);
-  if (!m) return null;
-  // The bracket span is always at line.from + 2 … line.from + 5  ( `[`, ` `/`x`, `]` )
-  const from    = line.from + 2;   // position of `[`
-  const to      = line.from + 5;   // position just after `]`
-  const checked = m[1] !== " ";
-  // Only react when the click landed on/near the checkbox glyph
-  if (pos < from || pos > to) return null;
-  return { from, to, checked };
+  if (m) {
+    // The bracket span is always at line.from + 2 … line.from + 5
+    const from    = line.from + 2;
+    const to      = line.from + 5;
+    const checked = m[1] !== " ";
+    if (pos < from || pos > to) return null;
+    return { from, to, checked };
+  }
+
+  // ── Table row: any line containing | with a [ ] or [x] cell ──────────────
+  if (line.text.includes("|")) {
+    const pattern = /\[([ xX])\](?!\()/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(line.text)) !== null) {
+      const from = line.from + match.index;
+      const to   = from + match[0].length;   // covers `[`, char, `]`
+      if (pos >= from && pos <= to) {
+        return { from, to, checked: match[1] !== " " };
+      }
+    }
+  }
+
+  return null;
 }
 
-/** ViewPlugin: decorates the `[ ]`/`[x]` span on every visible task line. */
+/** ViewPlugin: decorates the `[ ]`/`[x]` span on every visible task line
+ *  and on every `[ ]`/`[x]` occurrence inside table rows. */
 function buildTaskDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const { from, to } = view.viewport;
+  const mark = Decoration.mark({ class: "cm-task-checkbox" });
+
   for (let pos = from; pos <= to; ) {
     const line = view.state.doc.lineAt(pos);
+
+    // GFM list task item
     if (/^[-*+] \[([ xX])\] /.test(line.text)) {
-      // Mark the `[ ]`/`[x]` characters (positions +2 to +5 on the line)
-      builder.add(
-        line.from + 2,
-        line.from + 5,
-        Decoration.mark({ class: "cm-task-checkbox" }),
-      );
+      builder.add(line.from + 2, line.from + 5, mark);
     }
+    // Table row — may contain multiple [ ]/[x] cells
+    else if (line.text.includes("|")) {
+      const pattern = /\[([ xX])\](?!\()/g;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(line.text)) !== null) {
+        builder.add(
+          line.from + match.index,
+          line.from + match.index + match[0].length,
+          mark,
+        );
+      }
+    }
+
     pos = line.to + 1;
   }
   return builder.finish();
@@ -500,11 +609,13 @@ const sharedExtensions = [
   headingTheme,
   headingPlugin,
   formattingKeymap,
+  ...mdPairExtensions,
   emojiCompletion,
   completionTheme,
   taskPlugin,
   taskClickHandler,
   taskTheme,
+  ...findReplaceExtension,
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -543,6 +654,11 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth }
             highlightActiveLine: true,
             autocompletion: false,
             syntaxHighlighting: true,
+            // We supply our own closeBrackets (with Markdown delimiters)
+            // via mdPairExtensions — disable the basicSetup default to avoid
+            // double-handling.
+            closeBrackets: false,
+            closeBracketsKeymap: false,
           }}
           className="h-full"
         />

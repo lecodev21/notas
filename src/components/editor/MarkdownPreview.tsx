@@ -2,7 +2,8 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Children, useRef, useState } from "react";
+import { Children, cloneElement, isValidElement, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTheme } from "@/lib/theme";
 
 interface MarkdownPreviewProps {
@@ -34,7 +35,134 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Created once; closes over stable ref objects (not over prop values).
-  const [components] = useState(() => ({
+  const [components] = useState(() => {
+    // ── Table checkbox helper ──────────────────────────────────────────────
+    // Renders a single [ ]/[x] found inside a table cell.  Uses the same
+    // containerRef + onToggleRef pattern as the task-list input so indices
+    // stay consistent across the whole document.
+    const TableCheckbox = ({ checked }: { checked: boolean }) => {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const cbRef = useRef<HTMLInputElement>(null);
+      return (
+        <input
+          ref={cbRef}
+          type="checkbox"
+          checked={checked}
+          disabled={!onToggleRef.current}
+          onChange={() => {
+            if (!cbRef.current || !containerRef.current) return;
+            const all = Array.from(
+              containerRef.current.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+            );
+            const idx = all.indexOf(cbRef.current);
+            if (idx !== -1) onToggleRef.current?.(idx);
+          }}
+          style={{
+            cursor:        onToggleRef.current ? "pointer" : "default",
+            accentColor:   "#6366f1",
+            width:         "0.9em",
+            height:        "0.9em",
+            marginRight:   "0.3em",
+            verticalAlign: "middle",
+            flexShrink:    0,
+          }}
+        />
+      );
+    };
+
+    // Recursively walk React children and replace `[ ]`/`[x]` text patterns
+    // with <TableCheckbox> elements.  Handles plain strings, arrays, and
+    // arbitrarily nested React elements (e.g. bold text inside a cell).
+    function processNode(node: ReactNode): ReactNode {
+      if (typeof node === "string") {
+        const parts = node.split(/(\[[ xX]\])/);
+        if (parts.length === 1) return node;
+        return parts.map((part, i) => {
+          if (part === "[ ]")          return <TableCheckbox key={i} checked={false} />;
+          if (/^\[[xX]\]$/.test(part)) return <TableCheckbox key={i} checked={true}  />;
+          return part || null;
+        });
+      }
+      if (Array.isArray(node)) {
+        return node.map((child, i) => {
+          const result = processNode(child);
+          // Re-key the result if it's a valid element to avoid React warnings
+          return isValidElement(result)
+            ? cloneElement(result, { key: (result.key ?? i) })
+            : result;
+        });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (isValidElement(node) && (node as any).props?.children != null) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const el = node as React.ReactElement<any>;
+        return cloneElement(el, {}, processNode(el.props.children));
+      }
+      return node;
+    }
+
+    return {
+    // ── Tables ──────────────────────────────────────────────────────────────
+    // remark-gfm passes `style={{ textAlign }}` to th/td for column alignment
+    // (`:---`, `:---:`, `---:`).  We forward that single property and apply
+    // our own visual styles on top using CSS variables so both themes work.
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    table: ({ children }: any) => (
+      <div className="md-table">
+        <table>
+          {children}
+        </table>
+      </div>
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    thead: ({ children }: any) => <thead>{children}</thead>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tbody: ({ children }: any) => <tbody>{children}</tbody>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tr: ({ children }: any) => {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const [hovered, setHovered] = useState(false);
+      return (
+        <tr
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{ backgroundColor: hovered ? "var(--app-hover)" : undefined }}
+        >
+          {children}
+        </tr>
+      );
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    th: ({ children, style }: any) => (
+      <th style={{
+        padding:       "9px 14px",
+        textAlign:     (style as React.CSSProperties)?.textAlign ?? "left",
+        fontWeight:    600,
+        fontSize:      "0.7rem",
+        textTransform: "uppercase",
+        letterSpacing: "0.07em",
+        color:         "#6366f1",
+        borderBottom:  "1px solid var(--app-border-strong)",
+        whiteSpace:    "nowrap",
+      }}>
+        {children}
+      </th>
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    td: ({ children, style }: any) => (
+      <td style={{
+        padding:       "9px 14px",
+        textAlign:     (style as React.CSSProperties)?.textAlign ?? "left",
+        color:         "var(--app-text-secondary)",
+        borderBottom:  "1px solid var(--app-border)",
+        verticalAlign: "top",
+      }}>
+        {processNode(children)}
+      </td>
+    ),
+
+    // ── Input (task checkboxes) ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     input: ({ type, checked }: any) => {
       // Each rendered checkbox gets its own DOM ref.
@@ -103,11 +231,24 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         </li>
       );
     },
-  } as {
-    input: React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    li:    React.ComponentType<any>;
-  }));
+    } as {
+      input:  React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      li:     React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      table:  React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      thead:  React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tbody:  React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tr:     React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      th:     React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      td:     React.ComponentType<any>;
+    };
+  });
 
   const proseClass = [
     "prose prose-sm max-w-none",
