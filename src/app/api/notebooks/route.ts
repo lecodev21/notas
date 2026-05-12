@@ -11,7 +11,7 @@ export async function GET() {
     where: { userId: session.user.id },
     orderBy: { createdAt: "asc" },
     include: {
-      _count: { select: { notes: true } },
+      _count: { select: { notes: { where: { isTrashed: false } } } },
     },
   });
 
