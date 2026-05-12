@@ -184,15 +184,26 @@ body,
   --hljs-operator: #89ddff;
 }
 
-/* Base */
+/* ── Code block wrapper (not-prose removes Tailwind Typography interference) */
+.hljs-block {
+  margin:        1.25rem 0;
+  border-radius: 8px;
+  border:        1px solid var(--app-border);
+  overflow-x:    auto;
+  background:    var(--hljs-bg);
+}
+
+/* Base — the <code> element inside the block */
 .hljs {
-  color:            var(--hljs-fg);
-  background:       var(--hljs-bg) !important; /* override Tailwind prose pre bg */
-  border-radius:    6px;
-  padding:          1em 1.25em !important;
-  font-size:        0.8rem;
-  line-height:      1.6;
-  overflow-x:       auto;
+  display:       block;
+  color:         var(--hljs-fg);
+  background:    transparent;
+  padding:       1em 1.25em;
+  font-family:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size:     0.8rem;
+  line-height:   1.65;
+  white-space:   pre;
+  overflow-x:    auto;
 }
 
 /* Token classes */

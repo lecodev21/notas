@@ -2,16 +2,48 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import hljs from "highlight.js";
 import { Children, cloneElement, isValidElement, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTheme } from "@/lib/theme";
 
-// Stable reference — prevents ReactMarkdown from treating this as a new plugin
-// on every render (which would unmount/remount code blocks causing flicker).
-const rehypePlugins: Parameters<typeof ReactMarkdown>[0]["rehypePlugins"] = [
-  [rehypeHighlight, { detect: true, ignoreMissing: true }],
-];
+// ── Language alias map ─────────────────────────────────────────────────────
+// Maps common shorthands to the name highlight.js registers the language under.
+// hljs already handles many aliases internally (py→python, js→javascript…),
+// but this map adds extra shorthands and normalises casing before the lookup.
+const LANG_ALIASES: Record<string, string> = {
+  py:       "python",
+  python3:  "python",
+  js:       "javascript",
+  jsx:      "javascript",
+  ts:       "typescript",
+  tsx:      "typescript",
+  rb:       "ruby",
+  sh:       "bash",
+  shell:    "bash",
+  zsh:      "bash",
+  rs:       "rust",
+  kt:       "kotlin",
+  kts:      "kotlin",
+  cs:       "csharp",
+  "c#":     "csharp",
+  "c++":    "cpp",
+  cc:       "cpp",
+  golang:   "go",
+  yml:      "yaml",
+  md:       "markdown",
+  mdx:      "markdown",
+  tf:       "hcl",           // Terraform
+  dockerfile: "dockerfile",
+  node:     "javascript",
+};
+
+/** Returns the hljs language id for `lang`, or "" if unknown/still-being-typed. */
+function resolveLanguage(lang: string): string {
+  const key = lang.toLowerCase();
+  const resolved = LANG_ALIASES[key] ?? key;
+  return hljs.getLanguage(resolved) ? resolved : "";
+}
 
 interface MarkdownPreviewProps {
   content: string;
@@ -238,6 +270,41 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         </li>
       );
     },
+    // ── Fenced code blocks ───────────────────────────────────────────────────
+    // We bypass rehype-highlight (which fights Tailwind Typography specificity)
+    // and call highlight.js directly.  `not-prose` removes Tailwind's overrides
+    // so our .hljs-* CSS rules apply cleanly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    pre: ({ children }: any) => {
+      // The direct child is always the <code> element rendered by react-markdown
+      const codeEl = Children.toArray(children).find(isValidElement) as
+        | React.ReactElement<{ className?: string; children?: ReactNode }>
+        | undefined;
+
+      const className = codeEl?.props?.className ?? "";
+      const lang      = /language-(\w+)/.exec(className)?.[1] ?? "";
+      const raw       = String(codeEl?.props?.children ?? "").replace(/\n$/, "");
+
+      // Resolve alias ("py" → "python", "ts" → "typescript", …) and verify
+      // hljs knows it before highlighting — avoids console errors while the
+      // user is still typing the language name (e.g. "p", "pyt"…).
+      const knownLang = resolveLanguage(lang);
+      const html = knownLang
+        ? hljs.highlight(raw, { language: knownLang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(raw).value;
+
+      return (
+        <pre className="not-prose hljs-block">
+          <code
+            className={`hljs${lang ? ` language-${lang}` : ""}`}
+            // highlight.js output is safe: it HTML-escapes the source before
+            // wrapping tokens in <span> elements.
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </pre>
+      );
+    },
     } as {
       input:  React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -254,6 +321,8 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
       th:     React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       td:     React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pre:    React.ComponentType<any>;
     };
   });
 
@@ -294,7 +363,6 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         {content ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={rehypePlugins}
             components={components}
           >
             {content}
