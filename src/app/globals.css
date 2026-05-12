@@ -118,28 +118,31 @@ body,
 
 /* ── Markdown preview — table ────────────────────────────────────────────── */
 .md-table {
-  overflow-x: auto;
+  overflow: hidden;           /* clips table to the rounded corners           */
   margin: 1.25rem 0;
   border-radius: 8px;
   border: 1px solid var(--app-border-strong);
 }
 .md-table table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;  /* collapse avoids any inter-cell gap            */
   font-size: 0.8125rem;
+  margin: 0;
+  padding: 0;
 }
 
-/* Background lives on the cells, not on thead, so border-radius clips it */
+/* Reset any margin/padding Tailwind Typography may add to group elements */
+.md-table thead,
+.md-table tbody,
+.md-table tr {
+  margin: 0;
+  padding: 0;
+}
+
+/* Header background */
 .md-table th {
   background-color: rgba(99, 102, 241, 0.1);
 }
-
-/* Corner cells get the matching radius (1 px less than the wrapper) */
-.md-table thead tr th:first-child { border-top-left-radius:  7px; }
-.md-table thead tr th:last-child  { border-top-right-radius: 7px; }
-.md-table tbody tr:last-child td:first-child { border-bottom-left-radius:  7px; }
-.md-table tbody tr:last-child td:last-child  { border-bottom-right-radius: 7px; }
 
 /* ── Syntax highlighting — preview code blocks (highlight.js / rehype-highlight) ─
  *
@@ -189,8 +192,42 @@ body,
   margin:        1.25rem 0;
   border-radius: 8px;
   border:        1px solid var(--app-border);
-  overflow-x:    auto;
   background:    var(--hljs-bg);
+  overflow:      hidden;          /* keeps child corners inside the radius   */
+}
+
+/* ── Language label bar ───────────────────────────────────────────────────── */
+.hljs-lang-bar {
+  padding:       6px 16px;
+  border-bottom: 1px solid var(--app-border);
+  background:    var(--hljs-bar-bg);
+  display:       flex;
+  align-items:   center;
+}
+
+.hljs-lang-label {
+  font-family:    'JetBrains Mono', 'Fira Code', monospace;
+  font-size:      0.72rem;
+  font-weight:    500;
+  letter-spacing: 0.04em;
+  color:          var(--hljs-bar-fg);
+  user-select:    none;
+}
+
+/* Bar colour tokens — defined alongside the palette blocks below */
+:root {
+  --hljs-bar-bg: rgba(0, 0, 0, 0.03);
+  --hljs-bar-fg: #6366f1;
+}
+.dark {
+  --hljs-bar-bg: rgba(255, 255, 255, 0.04);
+  --hljs-bar-fg: #818cf8;
+}
+
+/* ── Scrollable pre wrapper ────────────────────────────────────────────────── */
+.hljs-pre {
+  margin:     0;
+  overflow-x: auto;
 }
 
 /* Base — the <code> element inside the block */

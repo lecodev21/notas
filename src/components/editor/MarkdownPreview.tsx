@@ -293,16 +293,29 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         ? hljs.highlight(raw, { language: knownLang, ignoreIllegals: true }).value
         : hljs.highlightAuto(raw).value;
 
+      // Label: resolved alias lowercase (e.g. "py" → "python"), or "code" as
+      // fallback when no language is specified in the fence.
+      const label = lang
+        ? (LANG_ALIASES[lang.toLowerCase()] ?? knownLang ?? lang).toLowerCase()
+        : "code";
+
       return (
-        <pre className="not-prose hljs-block">
-          <code
-            className={`hljs${lang ? ` language-${lang}` : ""}`}
-            // highlight.js output is safe: it HTML-escapes the source before
-            // wrapping tokens in <span> elements.
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </pre>
+        <div className="not-prose hljs-block">
+          {/* ── Language bar — always shown; falls back to "code" ──────── */}
+          <div className="hljs-lang-bar">
+            <span className="hljs-lang-label">{label}</span>
+          </div>
+          {/* ── Code ───────────────────────────────────────────────────── */}
+          <pre className="hljs-pre">
+            <code
+              className={`hljs${lang ? ` language-${lang}` : ""}`}
+              // highlight.js output is safe: it HTML-escapes the source before
+              // wrapping tokens in <span> elements.
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </pre>
+        </div>
       );
     },
     } as {
