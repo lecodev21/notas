@@ -141,3 +141,100 @@ body,
 .md-table tbody tr:last-child td:first-child { border-bottom-left-radius:  7px; }
 .md-table tbody tr:last-child td:last-child  { border-bottom-right-radius: 7px; }
 
+/* ── Syntax highlighting — preview code blocks (highlight.js / rehype-highlight) ─
+ *
+ *  Colours use CSS variables so both light and dark themes work automatically.
+ *  We define per-theme values in :root and .dark below, then map them to the
+ *  standard .hljs-* class names that rehype-highlight produces.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/* Light-mode palette */
+:root {
+  --hljs-bg:       #f6f8fa;        /* code block background */
+  --hljs-fg:       #24292e;        /* default text */
+  --hljs-keyword:  #d73a49;        /* if, return, const, … */
+  --hljs-builtin:  #005cc5;        /* console, Array, … */
+  --hljs-string:   #032f62;        /* "strings" */
+  --hljs-number:   #005cc5;        /* 42, 3.14 */
+  --hljs-comment:  #6a737d;        /* // comments */
+  --hljs-function: #6f42c1;        /* function names */
+  --hljs-type:     #e36209;        /* types / classes */
+  --hljs-meta:     #6a737d;        /* @decorators, #include */
+  --hljs-tag:      #22863a;        /* <html> tags */
+  --hljs-attr:     #6f42c1;        /* attribute names */
+  --hljs-literal:  #005cc5;        /* true, false, null */
+  --hljs-operator: #d73a49;        /* + - = > < */
+}
+
+/* Dark-mode palette (Tokyo Night-inspired) */
+.dark {
+  --hljs-bg:       rgba(255,255,255,0.04);
+  --hljs-fg:       #a9b1d6;
+  --hljs-keyword:  #bb9af7;
+  --hljs-builtin:  #7dcfff;
+  --hljs-string:   #9ece6a;
+  --hljs-number:   #ff9e64;
+  --hljs-comment:  #565f89;
+  --hljs-function: #7aa2f7;
+  --hljs-type:     #e0af68;
+  --hljs-meta:     #565f89;
+  --hljs-tag:      #f7768e;
+  --hljs-attr:     #bb9af7;
+  --hljs-literal:  #ff9e64;
+  --hljs-operator: #89ddff;
+}
+
+/* Base */
+.hljs {
+  color:            var(--hljs-fg);
+  background:       var(--hljs-bg) !important; /* override Tailwind prose pre bg */
+  border-radius:    6px;
+  padding:          1em 1.25em !important;
+  font-size:        0.8rem;
+  line-height:      1.6;
+  overflow-x:       auto;
+}
+
+/* Token classes */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-deletion            { color: var(--hljs-keyword); font-weight: 600; }
+
+.hljs-built_in,
+.hljs-selector-pseudo     { color: var(--hljs-builtin); }
+
+.hljs-string,
+.hljs-char,
+.hljs-regexp,
+.hljs-addition            { color: var(--hljs-string); }
+
+.hljs-number,
+.hljs-literal             { color: var(--hljs-number); }
+
+.hljs-comment,
+.hljs-quote               { color: var(--hljs-comment); font-style: italic; }
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_        { color: var(--hljs-function); font-weight: 600; }
+
+.hljs-type,
+.hljs-class               { color: var(--hljs-type); }
+
+.hljs-meta,
+.hljs-doctag              { color: var(--hljs-meta); }
+
+.hljs-tag                 { color: var(--hljs-tag); }
+.hljs-name                { color: var(--hljs-keyword); }
+.hljs-attribute,
+.hljs-attr                { color: var(--hljs-attr); }
+
+.hljs-variable,
+.hljs-template-variable   { color: var(--hljs-type); }
+
+.hljs-operator,
+.hljs-punctuation         { color: var(--hljs-operator); }
+
+.hljs-params              { color: var(--hljs-fg); }
+.hljs-subst               { color: var(--hljs-fg); }
+

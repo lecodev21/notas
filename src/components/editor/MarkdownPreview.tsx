@@ -2,9 +2,16 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { Children, cloneElement, isValidElement, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTheme } from "@/lib/theme";
+
+// Stable reference — prevents ReactMarkdown from treating this as a new plugin
+// on every render (which would unmount/remount code blocks causing flicker).
+const rehypePlugins: Parameters<typeof ReactMarkdown>[0]["rehypePlugins"] = [
+  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+];
 
 interface MarkdownPreviewProps {
   content: string;
@@ -287,6 +294,7 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         {content ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={rehypePlugins}
             components={components}
           >
             {content}
