@@ -15,6 +15,7 @@ interface NotebookTreeProps {
   onRename?: (id: string, name: string) => void;
   onDelete?: (id: string) => void;
   onNewChild?: (parentId: string, name: string) => void;
+  onDropNote?: (noteId: string, notebookId: string) => void;
   depth?: number;
 }
 
@@ -25,6 +26,7 @@ export function NotebookTree({
   onRename,
   onDelete,
   onNewChild,
+  onDropNote,
   depth = 0,
 }: NotebookTreeProps) {
   return (
@@ -38,6 +40,7 @@ export function NotebookTree({
           onRename={onRename}
           onDelete={onDelete}
           onNewChild={onNewChild}
+          onDropNote={onDropNote}
           depth={depth}
         />
       ))}
@@ -52,6 +55,7 @@ function NotebookItem({
   onRename,
   onDelete,
   onNewChild,
+  onDropNote,
   depth,
 }: {
   notebook: NotebookWithChildren;
@@ -60,11 +64,13 @@ function NotebookItem({
   onRename?: (id: string, name: string) => void;
   onDelete?: (id: string) => void;
   onNewChild?: (parentId: string, name: string) => void;
+  onDropNote?: (noteId: string, notebookId: string) => void;
   depth: number;
 }) {
   const hasChildren = (notebook.children?.length ?? 0) > 0;
   const [expanded, setExpanded] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(notebook.name);
@@ -75,16 +81,16 @@ function NotebookItem({
   const childInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuPos) return;
     const handleClick = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) {
-        setMenuOpen(false);
+        setMenuPos(null);
         setConfirmDelete(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
+  }, [menuPos]);
 
   function handleRenameSubmit() {
     if (renameValue.trim() && renameValue !== notebook.name) {
@@ -96,7 +102,7 @@ function NotebookItem({
   function handleAddChild() {
     setAddingChild(true);
     setExpanded(true);
-    setMenuOpen(false);
+    setMenuPos(null);
     // Focus the input after it mounts
     setTimeout(() => childInputRef.current?.focus(), 0);
   }
@@ -116,16 +122,44 @@ function NotebookItem({
         style={{
           paddingLeft: `${8 + depth * 12}px`,
           paddingRight: "4px",
-          backgroundColor: isSelected ? "rgba(99,102,241,0.15)" : undefined,
+          backgroundColor: isDragOver
+            ? "rgba(99,102,241,0.2)"
+            : isSelected
+            ? "rgba(99,102,241,0.15)"
+            : undefined,
+          outline: isDragOver ? "1px solid rgba(99,102,241,0.5)" : undefined,
+          outlineOffset: "-1px",
         }}
         onMouseEnter={(e) => {
-          if (!isSelected)
+          if (!isSelected && !isDragOver)
             (e.currentTarget as HTMLDivElement).style.backgroundColor =
               "var(--app-hover)";
         }}
         onMouseLeave={(e) => {
-          if (!isSelected)
+          if (!isSelected && !isDragOver)
             (e.currentTarget as HTMLDivElement).style.backgroundColor = "";
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          // Only clear when leaving the row itself, not a child element
+          if (!e.currentTarget.contains(e.relatedTarget as Node))
+            setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const noteId = e.dataTransfer.getData("text/plain");
+          if (noteId) onDropNote?.(noteId, notebook.id);
+          setIsDragOver(false);
+        }}
+        onContextMenu={(e) => {
+          if (!(onRename || onDelete)) return;
+          e.preventDefault();
+          setMenuPos({ x: e.clientX, y: e.clientY });
+          setConfirmDelete(false);
         }}
       >
         {/* Expand toggle */}
@@ -167,7 +201,7 @@ function NotebookItem({
             {(notebook._count?.notes ?? 0) > 0 && (
               <span
                 className="ml-auto shrink-0 tabular-nums"
-                style={{ color: "var(--app-text-faint)", fontSize: "0.65rem" }}
+                style={{ color: "var(--app-text-muted)", fontSize: "0.65rem" }}
               >
                 {notebook._count!.notes}
               </span>
@@ -175,109 +209,88 @@ function NotebookItem({
           </button>
         )}
 
-        {/* Context menu trigger */}
-        {(onRename || onDelete) && !renaming && (
-          <div className="relative" ref={menuRef}>
-            <button
-              className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded transition-opacity text-xs"
-              style={{ color: "var(--app-text-muted)" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen((v) => !v);
-              }}
-            >
-              ···
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 top-6 z-10 rounded-lg shadow-xl w-48"
-                style={{
-                  backgroundColor: "var(--app-bg-menu)",
-                  border: "1px solid var(--app-border-strong)",
-                }}
-              >
-                {confirmDelete ? (
-                  /* ── Confirmation prompt ── */
-                  <div className="px-3 py-2.5 space-y-2">
-                    <p className="text-xs font-medium" style={{ color: "var(--app-text-primary)" }}>
-                      ¿Eliminar &ldquo;{notebook.name}&rdquo;?
-                    </p>
-                    <p className="text-xs leading-relaxed" style={{ color: "var(--app-text-muted)" }}>
-                      Las notas dentro se moverán a la papelera. Los sub-notebooks también serán eliminados.
-                    </p>
-                    <div className="flex gap-1.5 pt-0.5">
-                      <button
-                        className="flex-1 text-xs px-2 py-1 rounded transition-colors"
-                        style={{
-                          backgroundColor: "var(--app-hover)",
-                          color: "var(--app-text-secondary)",
-                        }}
-                        onMouseEnter={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
-                        }
-                        onMouseLeave={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
-                        }
-                        onClick={() => { setConfirmDelete(false); setMenuOpen(false); }}
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        className="flex-1 text-xs px-2 py-1 rounded transition-colors bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                        onClick={() => {
-                          onDelete?.(notebook.id);
-                          setConfirmDelete(false);
-                          setMenuOpen(false);
-                        }}
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* ── Normal menu ── */
-                  <div className="py-1">
-                    {onNewChild && (
-                      <button
-                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
-                        style={{ color: "var(--app-text-secondary)" }}
-                        onMouseEnter={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
-                        }
-                        onMouseLeave={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
-                        }
-                        onClick={handleAddChild}
-                      >
-                        Nuevo sub-notebook
-                      </button>
-                    )}
-                    {onRename && (
-                      <button
-                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
-                        style={{ color: "var(--app-text-secondary)" }}
-                        onMouseEnter={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
-                        }
-                        onMouseLeave={(e) =>
-                          ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
-                        }
-                        onClick={() => { setRenaming(true); setMenuOpen(false); }}
-                      >
-                        Renombrar
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button
-                        className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                        onClick={() => setConfirmDelete(true)}
-                      >
-                        Eliminar
-                      </button>
-                    )}
-                  </div>
-                )}
+        {/* Add sub-notebook button — replaces the old ··· menu trigger */}
+        {onNewChild && !renaming && (
+          <button
+            className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded transition-opacity"
+            style={{ color: "var(--app-text-muted)" }}
+            title="Nuevo sub-notebook"
+            onClick={(e) => { e.stopPropagation(); handleAddChild(); }}
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        )}
+
+        {/* Right-click context menu — rendered fixed at cursor position */}
+        {menuPos && (
+          <div
+            ref={menuRef}
+            className="fixed z-50 rounded-lg shadow-xl w-44 py-1"
+            style={{
+              top:             menuPos.y,
+              left:            menuPos.x,
+              backgroundColor: "var(--app-bg-menu)",
+              border:          "1px solid var(--app-border-strong)",
+            }}
+          >
+            {confirmDelete ? (
+              <div className="px-3 py-2.5 space-y-2">
+                <p className="text-xs font-medium" style={{ color: "var(--app-text-primary)" }}>
+                  ¿Eliminar &ldquo;{notebook.name}&rdquo;?
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--app-text-muted)" }}>
+                  Las notas dentro se moverán a la papelera. Los sub-notebooks también serán eliminados.
+                </p>
+                <div className="flex gap-1.5 pt-0.5">
+                  <button
+                    className="flex-1 text-xs px-2 py-1 rounded transition-colors"
+                    style={{ backgroundColor: "var(--app-hover)", color: "var(--app-text-secondary)" }}
+                    onMouseEnter={(e) =>
+                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                    }
+                    onClick={() => { setConfirmDelete(false); setMenuPos(null); }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="flex-1 text-xs px-2 py-1 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+                    onClick={() => { onDelete?.(notebook.id); setConfirmDelete(false); setMenuPos(null); }}
+                  >
+                    Eliminar
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                {onRename && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                    style={{ color: "var(--app-text-secondary)" }}
+                    onMouseEnter={(e) =>
+                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+                    }
+                    onClick={() => { setRenaming(true); setMenuPos(null); }}
+                  >
+                    Renombrar
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -292,6 +305,7 @@ function NotebookItem({
           onRename={onRename}
           onDelete={onDelete}
           onNewChild={onNewChild}
+          onDropNote={onDropNote}
           depth={depth + 1}
         />
       )}

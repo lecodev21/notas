@@ -28,6 +28,7 @@ interface SidebarProps {
   onNewSubNotebook?: (parentId: string, name: string) => void;
   onRenameNotebook?: (id: string, name: string) => void;
   onDeleteNotebook?: (id: string) => void;
+  onDropNote?: (noteId: string, notebookId: string) => void;
 }
 
 const NAV_ITEMS = [
@@ -52,6 +53,7 @@ export function Sidebar({
   onNewSubNotebook,
   onRenameNotebook,
   onDeleteNotebook,
+  onDropNote,
 }: SidebarProps) {
   const { data: session } = useSession();
   const { theme, toggleTheme } = useTheme();
@@ -147,6 +149,7 @@ export function Sidebar({
               onRename={onRenameNotebook}
               onDelete={onDeleteNotebook}
               onNewChild={onNewSubNotebook}
+              onDropNote={onDropNote}
             />
           )}
 
@@ -230,7 +233,7 @@ export function Sidebar({
                     >
                       {meta.label}
                     </span>
-                    <span className="ml-auto" style={{ color: "var(--app-text-faint)" }}>
+                    <span className="ml-auto" style={{ color: "var(--app-text-muted)" }}>
                       {statusCounts[s] ?? 0}
                     </span>
                   </button>
@@ -369,7 +372,7 @@ function TagItem({
         >
           {tag.name}
         </span>
-        <span className="ml-auto" style={{ color: "var(--app-text-faint)" }}>
+        <span className="ml-auto" style={{ color: "var(--app-text-muted)" }}>
           {tag._count.noteTags}
         </span>
       </button>

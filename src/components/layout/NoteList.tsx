@@ -59,6 +59,7 @@ interface NoteListProps {
   notes: NoteWithTags[];
   loading?: boolean;
   selectedNoteId?: string | null;
+  exitingNoteId?: string | null;
   contextLabel?: string;
   isTrashView?: boolean;
   onSelectNote: (id: string) => void;
@@ -70,6 +71,7 @@ export function NoteList({
   notes,
   loading,
   selectedNoteId,
+  exitingNoteId,
   contextLabel = "Todas las notas",
   isTrashView = false,
   onSelectNote,
@@ -223,6 +225,7 @@ export function NoteList({
                 key={note.id}
                 note={note}
                 isActive={selectedNoteId === note.id}
+                isExiting={exitingNoteId === note.id}
                 onClick={() => onSelectNote(note.id)}
               />
             ))}

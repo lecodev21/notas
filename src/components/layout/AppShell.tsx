@@ -27,6 +27,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     initialNoteId ?? null
   );
   const [selectedStatus, setSelectedStatus] = useState<NoteStatus | null>(null);
+  const [exitingNoteId, setExitingNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
 
@@ -99,6 +100,17 @@ export function AppShell({ initialNoteId }: AppShellProps) {
       setSelectedNoteId(note.id);
       window.history.replaceState(null, "", `/notes/${note.id}`);
     }
+  }
+
+  function handleMoveNote(noteId: string, notebookId: string) {
+    // 1. Trigger exit animation on the card immediately
+    setExitingNoteId(noteId);
+    // 2. After animation completes, do the actual update (filters note from
+    //    cache in-place — no list reload, no spinner)
+    setTimeout(async () => {
+      await updateNote(noteId, { notebookId });
+      setExitingNoteId(null);
+    }, 260); // matches NoteCard transition duration
   }
 
   async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) {
@@ -236,6 +248,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             onNewSubNotebook={handleNewSubNotebook}
             onRenameNotebook={handleRenameNotebook}
             onDeleteNotebook={handleDeleteNotebook}
+            onDropNote={handleMoveNote}
           />
         </div>
       </div>
@@ -250,6 +263,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             notes={displayedNotes as Parameters<typeof NoteList>[0]["notes"]}
             loading={notesLoading || searchLoading}
             selectedNoteId={selectedNoteId}
+            exitingNoteId={exitingNoteId}
             contextLabel={searchQuery ? `Resultados: "${searchQuery}"` : contextLabel}
             isTrashView={view === "trash"}
             onSelectNote={handleSelectNote}

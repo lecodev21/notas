@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { cn, formatDate, getExcerpt, truncate } from "@/lib/utils";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import { STATUS_META, type NoteStatus } from "@/lib/noteStatus";
@@ -29,23 +30,38 @@ type NoteWithTags = Note & {
 interface NoteCardProps {
   note: NoteWithTags;
   isActive?: boolean;
+  isExiting?: boolean;
   onClick?: () => void;
 }
 
-export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
-  const excerpt = getExcerpt(note.body);
-  const tasks   = parseTasks(note.body);
+export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) {
+  const excerpt    = getExcerpt(note.body);
+  const tasks      = parseTasks(note.body);
+  const [dragging, setDragging] = useState(false);
 
   return (
     <button
+      draggable
       onClick={onClick}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", note.id);
+        e.dataTransfer.effectAllowed = "move";
+        // Small delay so the ghost image captures the card before opacity drops
+        requestAnimationFrame(() => setDragging(true));
+      }}
+      onDragEnd={() => setDragging(false)}
       className={cn(
-        "w-full text-left px-3 py-3 rounded-lg transition-colors cursor-pointer group",
-        isActive ? "border" : "border border-transparent"
+        "w-full text-left px-3 py-3 rounded-lg cursor-default group",
+        isActive ? "border" : "border border-transparent",
+        dragging  && "opacity-40 scale-95",
+        isExiting && "opacity-0 translate-x-3 pointer-events-none",
       )}
       style={{
         backgroundColor: isActive ? "rgba(99,102,241,0.12)" : undefined,
-        borderColor: isActive ? "rgba(99,102,241,0.3)" : "transparent",
+        borderColor:     isActive ? "rgba(99,102,241,0.3)" : "transparent",
+        transition: isExiting
+          ? "opacity 240ms ease, transform 240ms ease"
+          : "opacity 120ms, transform 120ms, background-color 150ms",
       }}
       onMouseEnter={(e) => {
         if (!isActive)
@@ -86,7 +102,7 @@ export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
 
       {excerpt && (
         <p
-          className="text-xs mt-1 line-clamp-2 leading-relaxed"
+          className="text-xs mt-1 line-clamp-1 leading-relaxed"
           style={{ color: "var(--app-text-muted)" }}
         >
           {truncate(excerpt, 100)}

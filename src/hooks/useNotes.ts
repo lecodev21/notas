@@ -128,19 +128,24 @@ export function useUpdateNote() {
         globalMutate("/api/status-counts"),
       ]);
     } else {
-      // Title / body / tag / status changes — patch in-place so the list never
-      // flickers. The status icon updates immediately without a reload.
-      // Status counts in the sidebar revalidate quietly in the background.
       await globalMutate(
         (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
         (current: { notes: NoteWithRelations[] } | undefined) => {
           if (!current) return current;
+          // notebookId change: remove from current list (note moved elsewhere)
+          if ("notebookId" in data) {
+            return { notes: current.notes.filter((n) => n.id !== id) };
+          }
+          // Title / body / tag / status: patch in-place, no flicker
           return { notes: current.notes.map((n) => (n.id === id ? note : n)) };
         },
         { revalidate: false }
       );
+      if ("notebookId" in data) {
+        // Notebook counts need to reflect the move immediately
+        globalMutate("/api/notebooks");
+      }
       if ("status" in data) {
-        // Only status counts need a quiet refresh — no loading state involved.
         globalMutate("/api/status-counts");
       }
     }
