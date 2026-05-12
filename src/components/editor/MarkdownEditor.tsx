@@ -14,7 +14,7 @@ import {
   ViewUpdate,
 } from "@codemirror/view";
 import { EditorSelection, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
+import { syntaxTree, LanguageDescription } from "@codemirror/language";
 import {
   autocompletion,
   closeBrackets,
@@ -87,6 +87,40 @@ function buildHeadingDecorations(view: EditorView): DecorationSet {
   });
 
   return builder.finish();
+}
+
+// ── Fenced code block language resolver ───────────────────────────────────
+// Maps common shorthands to the name registered in @codemirror/language-data.
+// Without this, ```py wouldn't activate Python syntax highlighting in the
+// editor because CodeMirror looks up the info string by exact/prefix match.
+const CODE_LANG_ALIASES: Record<string, string> = {
+  py:       "python",
+  python3:  "python",
+  js:       "javascript",
+  jsx:      "javascript",
+  ts:       "typescript",
+  tsx:      "typescript",
+  rb:       "ruby",
+  sh:       "bash",
+  shell:    "bash",
+  zsh:      "bash",
+  rs:       "rust",
+  kt:       "kotlin",
+  kts:      "kotlin",
+  cs:       "csharp",
+  "c#":     "csharp",
+  "c++":    "cpp",
+  cc:       "cpp",
+  golang:   "go",
+  yml:      "yaml",
+  md:       "markdown",
+  node:     "javascript",
+};
+
+function resolveCodeLanguage(info: string): LanguageDescription | null {
+  const key      = info.toLowerCase();
+  const resolved = CODE_LANG_ALIASES[key] ?? key;
+  return LanguageDescription.matchLanguageName(languages, resolved, true) ?? null;
 }
 
 const headingPlugin = ViewPlugin.fromClass(
@@ -704,32 +738,29 @@ const mdDecorationsPlugin = ViewPlugin.fromClass(
 );
 
 const mdDecorationsTheme = EditorView.theme({
-  // ── Inline formatting ─────────────────────────────────────────────────────
-  ".cm-md-strong": { fontWeight: "700" },
-  ".cm-md-em":     { fontStyle:  "italic" },
-  // Syntax punctuation — dim regardless of the decoration it lives inside
-  ".cm-md-syntax": { opacity: "0.38" },
-  // Inline code — light background, keep the editor's monospace font
-  ".cm-md-icode": {
-    backgroundColor: "rgba(99,102,241,0.13)",
+  // Each Markdown construct gets its own text colour so you can identify it
+  // at a glance without relying solely on font changes.
+  ".cm-md-strong": { fontWeight: "700",          color: "#4ade80" }, // green
+  ".cm-md-em":     { fontStyle:  "italic",       color: "#facc15" }, // yellow
+  ".cm-md-icode":  {                             color: "#f472b6", // pink
+    backgroundColor: "rgba(244,114,182,0.1)",
     borderRadius:    "3px",
     padding:         "0 3px",
   },
-  // Links — indigo accent
-  ".cm-md-link": { color: "#6366f1" },
-  // Strikethrough
-  ".cm-md-strike": { textDecoration: "line-through", opacity: "0.65" },
-  // ── Blockquote line ───────────────────────────────────────────────────────
-  // box-shadow draws the left accent bar without disturbing the layout.
+  ".cm-md-link":   { color: "#60a5fa" },                            // blue
+  ".cm-md-strike": { textDecoration: "line-through", color: "#fb923c" }, // orange
+  // Syntax punctuation — dim on top of whatever colour the parent gives it
+  ".cm-md-syntax": { opacity: "0.45" },
+  // Blockquote line — left accent bar via box-shadow + teal text
   ".cm-md-bq": {
-    color:     "var(--app-text-muted)",
-    boxShadow: "-4px 0 0 0 rgba(99,102,241,0.45)",
+    color:     "#2dd4bf",                                            // teal
+    boxShadow: "-4px 0 0 0 rgba(45,212,191,0.5)",
   },
 });
 
 // ── Extension bundles ──────────────────────────────────────────────────────
 const sharedExtensions = [
-  markdown({ base: markdownLanguage, codeLanguages: languages }),
+  markdown({ base: markdownLanguage, codeLanguages: resolveCodeLanguage }),
   EditorView.lineWrapping,
   baseTheme,
   headingTheme,
