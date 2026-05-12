@@ -27,6 +27,7 @@ import { useTheme } from "@/lib/theme";
 import { EMOJIS } from "./emojiData";
 import { findReplaceExtension } from "./findReplaceExtension";
 import { tableEditingExtension } from "./tableEditingExtension";
+import { typewriterExtension, paragraphFocusExtension } from "./writingModeExtension";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -40,6 +41,9 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ),
 });
 
+/** "focus" activates typewriter-scroll + paragraph-dim simultaneously. */
+export type WritingMode = "focus" | null;
+
 export interface MarkdownEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -47,6 +51,8 @@ export interface MarkdownEditorProps {
   editorViewRef?: MutableRefObject<EditorView | null>;
   /** When true, horizontal padding grows to center the text column at ≤ 680 px */
   readableWidth?: boolean;
+  /** Distraction-free writing mode: typewriter (auto-centre) or paragraph (dim rest) */
+  writingMode?: WritingMode;
 }
 
 // ── Heading size decorations ───────────────────────────────────────────────
@@ -841,7 +847,7 @@ const sharedExtensions = [
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────
-export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode }: MarkdownEditorProps) {
   const { theme } = useTheme();
   const handleChange = useCallback((val: string) => onChange(val), [onChange]);
 
@@ -851,6 +857,8 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth }
     // Prec.highest overrides the bundled highlight style from oneDark.
     Prec.highest(syntaxHighlighting(theme === "dark" ? darkHighlightStyle : lightHighlightStyle)),
     ...(theme !== "dark" ? [lightTheme] : []),
+    // Writing mode: typewriter-scroll + paragraph-dim together
+    ...(writingMode === "focus" ? [typewriterExtension, ...paragraphFocusExtension] : []),
   ];
 
   return (

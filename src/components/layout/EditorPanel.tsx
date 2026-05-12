@@ -7,6 +7,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import type { EditorView } from "@codemirror/view";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
+import type { WritingMode } from "@/components/editor/MarkdownEditor";
+import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import { FindReplaceBar } from "@/components/editor/FindReplaceBar";
 
@@ -21,7 +23,7 @@ interface EditorPanelProps {
   availableTags?: Tag[];
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
-  onUpdate: (id: string, data: { title?: string; body?: string; tagIds?: string[] }) => Promise<void>;
+  onUpdate: (id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) => Promise<void>;
   onDelete?: (id: string) => void;
   onTogglePin?: (id: string, isPinned: boolean) => void;
   onTrash?: (id: string) => void;
@@ -50,6 +52,11 @@ export function EditorPanel({
   const [mode, setMode] = useState<ViewMode>("edit");
   const [saving, setSaving] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [writingMode, setWritingMode] = useState<WritingMode>(null);
+
+  function toggleWritingMode() {
+    setWritingMode((prev) => (prev === "focus" ? null : "focus"));
+  }
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Shared with MarkdownToolbar so toolbar buttons can dispatch transactions
@@ -306,6 +313,25 @@ export function EditorPanel({
                 d="M4 6h16M4 12h10M4 18h7" />
             </svg>
           </Button>
+
+          <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+
+          {/* Focus writing mode toggle (typewriter + paragraph dim combined) */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={toggleWritingMode}
+            title={writingMode === "focus" ? "Desactivar modo de escritura enfocada" : "Modo de escritura enfocada — centra la línea activa y atenúa el resto"}
+            className={writingMode === "focus" ? "text-indigo-400" : ""}
+          >
+            {/* Zen / focus icon: text lines with a highlight on the middle */}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              <rect x="2" y="9" width="20" height="6" rx="1"
+                fill="currentColor" opacity="0.15" stroke="none" />
+            </svg>
+          </Button>
         </div>
 
         <div className="flex items-center gap-1">
@@ -388,12 +414,26 @@ export function EditorPanel({
           style={{ color: "var(--app-text-primary)" }}
         />
         <div className="flex flex-wrap items-center gap-2 mt-1.5">
+          {/* Status selector */}
+          {!note.isTrashed && (
+            <StatusSelector
+              status={(note.status as NoteStatus) ?? "active"}
+              onChange={(s) => onUpdate(note.id, { status: s })}
+            />
+          )}
+
+          {(note.notebook || !note.isTrashed) && (
+            <span style={{ color: "var(--app-border-strong)" }}>·</span>
+          )}
+
           {note.notebook && (
             <span className="text-xs" style={{ color: "var(--app-text-muted)" }}>
               📓 {note.notebook.name}
             </span>
           )}
-          {note.notebook && <span style={{ color: "var(--app-border-strong)" }}>·</span>}
+          {note.notebook && (
+            <span style={{ color: "var(--app-border-strong)" }}>·</span>
+          )}
           <TagInput
             currentTags={note.noteTags.map(({ tag }) => tag)}
             availableTags={availableTags}
@@ -441,6 +481,7 @@ export function EditorPanel({
               value={localBody}
               editorViewRef={editorViewRef}
               readableWidth={readableWidth}
+              writingMode={writingMode}
               onChange={(v) => {
                 setLocalBody(v);
                 debouncedSave("body", v);
@@ -467,7 +508,7 @@ export function EditorPanel({
                   // @uiw/react-codemirror skips re-dispatching when value ===
                   // doc.toString(), so setting localBody afterwards is safe.
                   const view = editorViewRef.current;
-                  if (view && !view.isDestroyed) {
+                  if (view && !(view as EditorView & { isDestroyed?: boolean }).isDestroyed) {
                     const old = view.state.doc.toString();
                     if (old !== next) {
                       // Find the minimal changed range so CodeMirror treats it
@@ -506,6 +547,93 @@ export function EditorPanel({
         <span style={{ color: "var(--app-border-strong)" }}>·</span>
         <span>{stats.mins} {stats.mins === 1 ? "min" : "mins"} de lectura</span>
       </div>
+    </div>
+  );
+}
+
+// ── Status selector ────────────────────────────────────────────────────────
+
+function StatusSelector({
+  status,
+  onChange,
+}: {
+  status: NoteStatus;
+  onChange: (s: NoteStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const meta = STATUS_META[status];
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-colors"
+        style={{
+          backgroundColor: "var(--app-hover)",
+          color: "var(--app-text-secondary)",
+          border: "1px solid var(--app-border-strong)",
+        }}
+        title="Cambiar estado"
+      >
+        <span className="text-[11px] leading-none">{meta.icon}</span>
+        <span>{meta.label}</span>
+        <svg className="w-2.5 h-2.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-30 rounded-lg shadow-xl py-1 w-36"
+          style={{
+            backgroundColor: "var(--app-bg-menu)",
+            border: "1px solid var(--app-border-strong)",
+          }}
+        >
+          {STATUS_ORDER.map((s) => {
+            const m = STATUS_META[s];
+            const isActive = s === status;
+            return (
+              <button
+                key={s}
+                onClick={() => { onChange(s); setOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                style={{
+                  color: isActive ? "#818cf8" : "var(--app-text-secondary)",
+                  backgroundColor: isActive ? "rgba(99,102,241,0.12)" : undefined,
+                  fontWeight: isActive ? 600 : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive)
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive)
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+                }}
+              >
+                <span className="text-[13px] leading-none">{m.icon}</span>
+                {m.label}
+                {isActive && (
+                  <svg className="w-3 h-3 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
