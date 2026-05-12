@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NoteCard } from "@/components/notes/NoteCard";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { useEmptyTrash } from "@/hooks/useNotes";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 
 // ── Sort order ─────────────────────────────────────────────────────────────
@@ -58,6 +60,7 @@ interface NoteListProps {
   loading?: boolean;
   selectedNoteId?: string | null;
   contextLabel?: string;
+  isTrashView?: boolean;
   onSelectNote: (id: string) => void;
   onNewNote: () => void;
   onSearch: (q: string) => void;
@@ -68,10 +71,21 @@ export function NoteList({
   loading,
   selectedNoteId,
   contextLabel = "Todas las notas",
+  isTrashView = false,
   onSelectNote,
   onNewNote,
   onSearch,
 }: NoteListProps) {
+  const { emptyTrash } = useEmptyTrash();
+  const [confirmOpen,  setConfirmOpen]  = useState(false);
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
+
+  async function handleEmptyTrashConfirmed() {
+    setEmptyingTrash(true);
+    await emptyTrash();
+    setEmptyingTrash(false);
+    setConfirmOpen(false);
+  }
   const [searchValue, setSearchValue] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -116,12 +130,37 @@ export function NoteList({
           </span>
           <div className="flex items-center gap-0.5">
             <SortMenu sortKey={sortKey} onChange={handleSortChange} />
-            <Button size="icon" variant="ghost" onClick={onNewNote} title="Nueva nota">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </Button>
+            {isTrashView ? (
+              /* Vaciar papelera — only shown when there are notes to delete */
+              notes.length > 0 && (
+                <button
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={emptyingTrash}
+                  title="Vaciar papelera"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50"
+                  style={{
+                    color: "#f87171",
+                    border: "1px solid rgba(248,113,113,0.35)",
+                    backgroundColor: "rgba(248,113,113,0.08)",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(248,113,113,0.15)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(248,113,113,0.08)";
+                  }}
+                >
+                  🗑 Vaciar
+                </button>
+              )
+            ) : (
+              <Button size="icon" variant="ghost" onClick={onNewNote} title="Nueva nota">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -164,16 +203,18 @@ export function NoteList({
           </div>
         ) : notes.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <span className="text-2xl mb-2">📝</span>
+            <span className="text-2xl mb-2">{isTrashView ? "🗑️" : "📝"}</span>
             <p className="text-xs" style={{ color: "var(--app-text-muted)" }}>
-              No hay notas aquí
+              {isTrashView ? "Papelera vacía" : "No hay notas aquí"}
             </p>
-            <button
-              onClick={onNewNote}
-              className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition"
-            >
-              Crear primera nota →
-            </button>
+            {!isTrashView && (
+              <button
+                onClick={onNewNote}
+                className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition"
+              >
+                Crear primera nota →
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -197,6 +238,73 @@ export function NoteList({
           {notes.length} nota{notes.length !== 1 ? "s" : ""}
         </p>
       </div>
+
+      {/* ── Empty-trash confirmation modal ── */}
+      <Modal
+        open={confirmOpen}
+        onClose={() => !emptyingTrash && setConfirmOpen(false)}
+        title="¿Vaciar papelera?"
+      >
+        {/* Trash icon */}
+        <div className="flex justify-center mb-4">
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+            style={{ backgroundColor: "rgba(248,113,113,0.12)" }}
+          >
+            🗑
+          </div>
+        </div>
+
+        <p className="text-sm text-center mb-1" style={{ color: "var(--app-text-primary)" }}>
+          Se eliminarán permanentemente{" "}
+          <span className="font-semibold">
+            {notes.length} nota{notes.length !== 1 ? "s" : ""}
+          </span>.
+        </p>
+        <p className="text-xs text-center mb-6" style={{ color: "var(--app-text-muted)" }}>
+          Esta acción no se puede deshacer.
+        </p>
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={() => setConfirmOpen(false)}
+            disabled={emptyingTrash}
+            className="px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-50"
+            style={{
+              backgroundColor: "var(--app-hover)",
+              color: "var(--app-text-secondary)",
+              border: "1px solid var(--app-border)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleEmptyTrashConfirmed}
+            disabled={emptyingTrash}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            style={{
+              backgroundColor: emptyingTrash ? "rgba(248,113,113,0.5)" : "#ef4444",
+              color: "#fff",
+            }}
+            onMouseEnter={(e) => {
+              if (!emptyingTrash)
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#dc2626";
+            }}
+            onMouseLeave={(e) => {
+              if (!emptyingTrash)
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ef4444";
+            }}
+          >
+            {emptyingTrash ? "Eliminando…" : "Vaciar papelera"}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

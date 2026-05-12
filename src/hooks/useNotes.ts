@@ -2,6 +2,7 @@
 
 import useSWR, { mutate as globalMutate } from "swr";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
+import type { NoteStatus } from "@/lib/noteStatus";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -19,6 +20,7 @@ interface NotesFilter {
   tag?: string;
   pinned?: string;
   trashed?: string;
+  status?: NoteStatus;
   id?: string | null;
 }
 
@@ -42,6 +44,7 @@ export function useNotes(filter: NotesFilter = {}) {
   if (filter.tag) params.set("tag", filter.tag);
   if (filter.pinned) params.set("pinned", filter.pinned);
   if (filter.trashed) params.set("trashed", filter.trashed);
+  if (filter.status) params.set("status", filter.status);
 
   const key = `/api/notes?${params.toString()}`;
   const { data, error, isLoading } = useSWR<{ notes: NoteWithRelations[] }>(
@@ -80,10 +83,22 @@ export function useCreateNote() {
   return { createNote };
 }
 
+export function useStatusCounts() {
+  const { data, isLoading, mutate } = useSWR<{ counts: Record<string, number> }>(
+    "/api/status-counts",
+    fetcher
+  );
+  return {
+    counts: data?.counts ?? { active: 0, on_hold: 0, completed: 0, dropped: 0 },
+    loading: isLoading,
+    mutate,
+  };
+}
+
 export function useUpdateNote() {
   async function updateNote(
     id: string,
-    data: Partial<Pick<Note, "title" | "body" | "isPinned" | "isTrashed" | "notebookId">> & {
+    data: Partial<Pick<Note, "title" | "body" | "isPinned" | "isTrashed" | "notebookId" | "status">> & {
       tagIds?: string[];
     }
   ) {
@@ -101,16 +116,21 @@ export function useUpdateNote() {
     const isVisibilityChange = "isTrashed" in data || "isPinned" in data;
 
     if (isVisibilityChange) {
-      // Trash/restore/pin changes the note's membership in filtered lists
-      // (e.g. a trashed note must disappear from the normal list).
-      // Revalidate so each list reflects the new state correctly.
-      await globalMutate(
-        (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
-        undefined,
-        { revalidate: true }
-      );
+      // Trash/restore/pin changes affect which lists a note appears in.
+      // Revalidate notes lists, notebooks (counts), and status counts sidebar.
+      await Promise.all([
+        globalMutate(
+          (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
+          undefined,
+          { revalidate: true }
+        ),
+        globalMutate("/api/notebooks"),
+        globalMutate("/api/status-counts"),
+      ]);
     } else {
-      // Title/body/tag changes — patch in-place so the list never flickers.
+      // Title / body / tag / status changes — patch in-place so the list never
+      // flickers. The status icon updates immediately without a reload.
+      // Status counts in the sidebar revalidate quietly in the background.
       await globalMutate(
         (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
         (current: { notes: NoteWithRelations[] } | undefined) => {
@@ -119,6 +139,10 @@ export function useUpdateNote() {
         },
         { revalidate: false }
       );
+      if ("status" in data) {
+        // Only status counts need a quiet refresh — no loading state involved.
+        globalMutate("/api/status-counts");
+      }
     }
 
     return note as NoteWithRelations;
@@ -131,9 +155,32 @@ export function useDeleteNote() {
   async function deleteNote(id: string) {
     const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
     if (!res.ok) return false;
-    await globalMutate((key: string) => typeof key === "string" && key.startsWith("/api/notes"));
+    await Promise.all([
+      globalMutate((key: string) => typeof key === "string" && key.startsWith("/api/notes")),
+      globalMutate("/api/notebooks"),
+      globalMutate("/api/status-counts"),
+    ]);
     return true;
   }
 
   return { deleteNote };
+}
+
+export function useEmptyTrash() {
+  async function emptyTrash() {
+    const res = await fetch("/api/trash", { method: "DELETE" });
+    if (!res.ok) return false;
+    await Promise.all([
+      globalMutate(
+        (key: unknown) => typeof key === "string" && key.includes("trashed=true"),
+        undefined,
+        { revalidate: true },
+      ),
+      globalMutate("/api/notebooks"),
+      globalMutate("/api/status-counts"),
+    ]);
+    return true;
+  }
+
+  return { emptyTrash };
 }

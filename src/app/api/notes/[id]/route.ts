@@ -42,6 +42,14 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { tagIds, notebookId, ...rest } = parsed.data;
 
+  // Keep trashedAt in sync with isTrashed:
+  //   • moving to trash  → stamp trashedAt = now (only if not already set)
+  //   • restoring        → clear trashedAt
+  const trashedAtPatch =
+    rest.isTrashed === true  ? { trashedAt: existing.trashedAt ?? new Date() } :
+    rest.isTrashed === false ? { trashedAt: null }                             :
+    {};
+
   const note = await prisma.$transaction(async (tx) => {
     // Update tags atomically if provided
     if (tagIds !== undefined) {
@@ -57,6 +65,7 @@ export async function PATCH(request: Request, { params }: Params) {
       where: { id },
       data: {
         ...rest,
+        ...trashedAtPatch,
         ...(notebookId !== undefined && { notebookId }),
       },
       include: noteInclude,

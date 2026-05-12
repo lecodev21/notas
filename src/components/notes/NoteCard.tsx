@@ -1,5 +1,16 @@
 import { cn, formatDate, getExcerpt, truncate } from "@/lib/utils";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
+import { STATUS_META, type NoteStatus } from "@/lib/noteStatus";
+
+const TRASH_TTL_DAYS = 30;
+
+/** Returns days remaining before permanent deletion, or null if not in trash. */
+function daysUntilPurge(note: Note): number | null {
+  if (!note.isTrashed || !note.trashedAt) return null;
+  const elapsed   = Date.now() - new Date(note.trashedAt).getTime();
+  const remaining = TRASH_TTL_DAYS - Math.floor(elapsed / (1000 * 60 * 60 * 24));
+  return Math.max(0, remaining);
+}
 
 /** Parse `- [x]` / `- [ ]` task lines and return { done, total }. */
 function parseTasks(body: string): { done: number; total: number } | null {
@@ -48,11 +59,20 @@ export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
     >
       <div className="flex items-start justify-between gap-2">
         <span
-          className="text-sm font-medium leading-snug line-clamp-1"
+          className="text-sm font-medium leading-snug line-clamp-1 flex items-center gap-1"
           style={{ color: "var(--app-text-primary)" }}
         >
+          {/* Status icon — always visible except in trash */}
+          {!note.isTrashed && note.status && (
+            <span
+              className="text-[11px] leading-none shrink-0"
+              title={STATUS_META[note.status as NoteStatus]?.label}
+            >
+              {STATUS_META[note.status as NoteStatus]?.icon}
+            </span>
+          )}
           {note.isPinned && (
-            <span className="mr-1 text-indigo-400" aria-label="Pinned">📌</span>
+            <span className="text-indigo-400 shrink-0" aria-label="Pinned">📌</span>
           )}
           {note.title || "Sin título"}
         </span>
@@ -122,6 +142,29 @@ export function NoteCard({ note, isActive, onClick }: NoteCardProps) {
           )}
         </div>
       )}
+
+      {/* ── Trash countdown badge ── */}
+      {(() => {
+        const days = daysUntilPurge(note);
+        if (days === null) return null;
+        const urgent = days <= 5;
+        const label  = days === 0
+          ? "Se elimina hoy"
+          : days === 1
+          ? "Se elimina mañana"
+          : `Se elimina en ${days} días`;
+        return (
+          <div className="flex items-center gap-1 mt-2">
+            <span style={{ fontSize: "0.65rem" }}>🗑</span>
+            <span
+              className="text-[10px] font-medium"
+              style={{ color: urgent ? "#f87171" : "var(--app-text-muted)" }}
+            >
+              {label}
+            </span>
+          </div>
+        );
+      })()}
     </button>
   );
 }

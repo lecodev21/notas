@@ -43,8 +43,10 @@ model Note {
   body       String    @default("")
   userId     String
   notebookId String?
+  status     String    @default("active")  // active | on_hold | completed | dropped
   isPinned   Boolean   @default(false)
   isTrashed  Boolean   @default(false)
+  trashedAt  DateTime?                  // set when moved to trash; used for auto-purge
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
