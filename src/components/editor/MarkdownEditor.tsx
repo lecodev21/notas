@@ -14,7 +14,8 @@ import {
   ViewUpdate,
 } from "@codemirror/view";
 import { EditorSelection, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
-import { syntaxTree, LanguageDescription } from "@codemirror/language";
+import { syntaxTree, LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import {
   autocompletion,
   closeBrackets,
@@ -25,6 +26,7 @@ import {
 import { useTheme } from "@/lib/theme";
 import { EMOJIS } from "./emojiData";
 import { findReplaceExtension } from "./findReplaceExtension";
+import { tableEditingExtension } from "./tableEditingExtension";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -188,6 +190,66 @@ const lightTheme = EditorView.theme(
   },
   { dark: false }
 );
+
+// ── Syntax highlight styles — mirror the hljs preview palette ─────────────
+// Light: GitHub-inspired (same as --hljs-* :root vars in globals.css)
+// Dark:  Tokyo Night-inspired (same as --hljs-* .dark vars in globals.css)
+//
+// We use Prec.highest so these rules win over oneDark's bundled highlight style.
+
+const lightHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword,                            color: "#d73a49", fontWeight: "600" },
+  { tag: [tags.name, tags.deleted, tags.macroName], color: "#24292e" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.labelName],
+                                                  color: "#6f42c1", fontWeight: "600" },
+  { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)],
+                                                  color: "#005cc5" },
+  { tag: [tags.definition(tags.name), tags.separator], color: "#24292e" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.changed, tags.annotation,
+          tags.modifier, tags.self, tags.standard(tags.variableName)],
+                                                  color: "#e36209" },
+  { tag: [tags.operator, tags.operatorKeyword, tags.url, tags.escape, tags.regexp,
+          tags.link, tags.special(tags.string)],  color: "#d73a49" },
+  { tag: [tags.meta, tags.comment],               color: "#6a737d", fontStyle: "italic" },
+  { tag: tags.strong,                             fontWeight: "bold" },
+  { tag: tags.emphasis,                           fontStyle: "italic" },
+  { tag: tags.strikethrough,                      textDecoration: "line-through" },
+  { tag: tags.link,                               color: "#005cc5", textDecoration: "underline" },
+  { tag: tags.heading,                            fontWeight: "bold", color: "#24292e" },
+  { tag: [tags.atom, tags.bool, tags.special(tags.variableName)], color: "#005cc5" },
+  { tag: [tags.processingInstruction, tags.string, tags.inserted], color: "#032f62" },
+  { tag: tags.number,                             color: "#005cc5" },
+  { tag: tags.tagName,                            color: "#22863a" },
+  { tag: tags.attributeName,                      color: "#6f42c1" },
+  { tag: tags.invalid,                            color: "#cb2431" },
+]);
+
+const darkHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword,                            color: "#bb9af7", fontWeight: "600" },
+  { tag: [tags.name, tags.deleted, tags.macroName], color: "#a9b1d6" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.labelName],
+                                                  color: "#7aa2f7", fontWeight: "600" },
+  { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)],
+                                                  color: "#ff9e64" },
+  { tag: [tags.definition(tags.name), tags.separator], color: "#a9b1d6" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.changed, tags.annotation,
+          tags.modifier, tags.self, tags.standard(tags.variableName)],
+                                                  color: "#e0af68" },
+  { tag: [tags.operator, tags.operatorKeyword, tags.url, tags.escape, tags.regexp,
+          tags.link, tags.special(tags.string)],  color: "#89ddff" },
+  { tag: [tags.meta, tags.comment],               color: "#565f89", fontStyle: "italic" },
+  { tag: tags.strong,                             fontWeight: "bold" },
+  { tag: tags.emphasis,                           fontStyle: "italic" },
+  { tag: tags.strikethrough,                      textDecoration: "line-through" },
+  { tag: tags.link,                               color: "#7dcfff", textDecoration: "underline" },
+  { tag: tags.heading,                            fontWeight: "bold", color: "#c0caf5" },
+  { tag: [tags.atom, tags.bool, tags.special(tags.variableName)], color: "#ff9e64" },
+  { tag: [tags.processingInstruction, tags.string, tags.inserted], color: "#9ece6a" },
+  { tag: tags.number,                             color: "#ff9e64" },
+  { tag: tags.tagName,                            color: "#f7768e" },
+  { tag: tags.attributeName,                      color: "#bb9af7" },
+  { tag: tags.invalid,                            color: "#f7768e" },
+]);
 
 // ── Formatting keyboard shortcuts ─────────────────────────────────────────
 // Each command returns true so CodeMirror marks the event as handled and the
@@ -775,6 +837,7 @@ const sharedExtensions = [
   mdDecorationsPlugin,
   mdDecorationsTheme,
   ...findReplaceExtension,
+  tableEditingExtension,
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -784,6 +847,9 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth }
 
   const extensions = [
     ...sharedExtensions,
+    // Syntax highlight style — matches the hljs preview palette exactly.
+    // Prec.highest overrides the bundled highlight style from oneDark.
+    Prec.highest(syntaxHighlighting(theme === "dark" ? darkHighlightStyle : lightHighlightStyle)),
     ...(theme !== "dark" ? [lightTheme] : []),
   ];
 
