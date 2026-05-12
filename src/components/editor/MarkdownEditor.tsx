@@ -601,6 +601,132 @@ const taskTheme = EditorView.theme({
   ".cm-task-checkbox": { cursor: "pointer" },
 });
 
+// ── Markdown inline decorations ────────────────────────────────────────────
+// Walks the Lezer syntax tree inside the visible viewport and applies visual
+// decorations for inline Markdown:
+//
+//   **bold**    → bold text, markers dimmed
+//   *italic*    → italic text, markers dimmed
+//   `code`      → monospace + indigo tint background, backticks dimmed
+//   [link](url) → indigo colour, markup characters dimmed
+//   > blockquote→ left accent border + muted colour on each line
+//   ~~strike~~  → strikethrough, markers dimmed
+//
+// Headings are handled by the existing headingPlugin above; no overlap here.
+
+type MdMarkSpec = { from: number; to: number; deco: Decoration };
+
+// Stable decoration instances — created once, reused every render.
+const _boldDeco  = Decoration.mark({ class: "cm-md-strong" });
+const _emDeco    = Decoration.mark({ class: "cm-md-em" });
+const _codeDeco  = Decoration.mark({ class: "cm-md-icode" });
+const _linkDeco  = Decoration.mark({ class: "cm-md-link" });
+const _strikeDeco= Decoration.mark({ class: "cm-md-strike" });
+const _dimDeco   = Decoration.mark({ class: "cm-md-syntax" });
+const _bqLineDeco= Decoration.line({ class: "cm-md-bq" });
+
+function buildMdDecorations(view: EditorView): DecorationSet {
+  const specs: MdMarkSpec[] = [];
+  const { from, to } = view.viewport;
+  const doc = view.state.doc;
+
+  syntaxTree(view.state).iterate({
+    from,
+    to,
+    enter(node) {
+      switch (node.name) {
+        // ── Bold / italic ────────────────────────────────────────────────
+        case "StrongEmphasis":
+          specs.push({ from: node.from, to: node.to, deco: _boldDeco }); break;
+        case "Emphasis":
+          specs.push({ from: node.from, to: node.to, deco: _emDeco }); break;
+
+        // ── Syntax punctuation (dimmed in all contexts) ──────────────────
+        case "EmphasisMark":
+        case "CodeMark":
+        case "LinkMark":
+        case "QuoteMark":
+        case "StrikethroughMark":
+          specs.push({ from: node.from, to: node.to, deco: _dimDeco }); break;
+
+        // ── Inline code ──────────────────────────────────────────────────
+        case "InlineCode":
+          specs.push({ from: node.from, to: node.to, deco: _codeDeco }); break;
+
+        // ── Links ────────────────────────────────────────────────────────
+        case "Link":
+          specs.push({ from: node.from, to: node.to, deco: _linkDeco }); break;
+
+        // ── Strikethrough ────────────────────────────────────────────────
+        case "Strikethrough":
+          specs.push({ from: node.from, to: node.to, deco: _strikeDeco }); break;
+
+        // ── Blockquote — one line decoration per line in the block ───────
+        case "Blockquote": {
+          let pos = node.from;
+          while (pos <= node.to) {
+            const line = doc.lineAt(pos);
+            // Only decorate lines inside the current viewport
+            if (line.from >= from) {
+              specs.push({ from: line.from, to: line.from, deco: _bqLineDeco });
+            }
+            pos = line.to + 1;
+          }
+          break;
+        }
+      }
+    },
+  });
+
+  // RangeSetBuilder requires non-decreasing `from`; sort first.
+  specs.sort((a, b) => a.from - b.from || a.to - b.to);
+
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from: f, to: t, deco } of specs) {
+    builder.add(f, t, deco);
+  }
+  return builder.finish();
+}
+
+const mdDecorationsPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildMdDecorations(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) {
+        this.decorations = buildMdDecorations(u.view);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+const mdDecorationsTheme = EditorView.theme({
+  // ── Inline formatting ─────────────────────────────────────────────────────
+  ".cm-md-strong": { fontWeight: "700" },
+  ".cm-md-em":     { fontStyle:  "italic" },
+  // Syntax punctuation — dim regardless of the decoration it lives inside
+  ".cm-md-syntax": { opacity: "0.38" },
+  // Inline code — light background, keep the editor's monospace font
+  ".cm-md-icode": {
+    backgroundColor: "rgba(99,102,241,0.13)",
+    borderRadius:    "3px",
+    padding:         "0 3px",
+  },
+  // Links — indigo accent
+  ".cm-md-link": { color: "#6366f1" },
+  // Strikethrough
+  ".cm-md-strike": { textDecoration: "line-through", opacity: "0.65" },
+  // ── Blockquote line ───────────────────────────────────────────────────────
+  // box-shadow draws the left accent bar without disturbing the layout.
+  ".cm-md-bq": {
+    color:     "var(--app-text-muted)",
+    boxShadow: "-4px 0 0 0 rgba(99,102,241,0.45)",
+  },
+});
+
 // ── Extension bundles ──────────────────────────────────────────────────────
 const sharedExtensions = [
   markdown({ base: markdownLanguage, codeLanguages: languages }),
@@ -615,6 +741,8 @@ const sharedExtensions = [
   taskPlugin,
   taskClickHandler,
   taskTheme,
+  mdDecorationsPlugin,
+  mdDecorationsTheme,
   ...findReplaceExtension,
 ];
 
