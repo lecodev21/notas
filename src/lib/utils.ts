@@ -22,6 +22,18 @@ export function formatDate(date: Date | string): string {
   }
 }
 
+/** Full date + time for the info panel: "10 may 2026, 9:30 a. m." */
+export function formatDateTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("es", {
+    day:    "numeric",
+    month:  "short",
+    year:   "numeric",
+    hour:   "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return str.slice(0, length).trimEnd() + "…";

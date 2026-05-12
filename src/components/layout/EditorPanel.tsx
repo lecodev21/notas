@@ -11,6 +11,8 @@ import type { WritingMode } from "@/components/editor/MarkdownEditor";
 import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import { FindReplaceBar } from "@/components/editor/FindReplaceBar";
+import { NoteInfoPanel } from "@/components/notes/NoteInfoPanel";
+import { Modal } from "@/components/ui/Modal";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -53,6 +55,8 @@ export function EditorPanel({
   const [saving, setSaving] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [writingMode, setWritingMode] = useState<WritingMode>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmTrashOpen,  setConfirmTrashOpen]  = useState(false);
 
   function toggleWritingMode() {
     setWritingMode((prev) => (prev === "focus" ? null : "focus"));
@@ -355,11 +359,7 @@ export function EditorPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    if (confirm("¿Eliminar permanentemente esta nota? No hay vuelta atrás.")) {
-                      onDeletePermanent(note.id);
-                    }
-                  }}
+                  onClick={() => setConfirmDeleteOpen(true)}
                   title="Eliminar permanentemente"
                   className="text-xs text-red-400 hover:text-red-300 px-2"
                 >
@@ -385,7 +385,7 @@ export function EditorPanel({
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={() => onTrash(note.id)}
+                  onClick={() => setConfirmTrashOpen(true)}
                   title="Mover a papelera"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -499,6 +499,7 @@ export function EditorPanel({
             )}
           >
             <div style={readableWidth ? { maxWidth: 680, margin: "0 auto" } : undefined}>
+              <NoteInfoPanel note={note} body={localBody} />
               <MarkdownPreviewWrapper
                 body={localBody}
                 onToggleTask={note.isTrashed ? undefined : (idx) => {
@@ -532,6 +533,107 @@ export function EditorPanel({
           </div>
         )}
       </div>
+
+      {/* Move to trash confirmation modal */}
+      <Modal open={confirmTrashOpen} onClose={() => setConfirmTrashOpen(false)}>
+        <div className="flex flex-col items-center gap-3 px-2 py-1">
+          <div
+            className="w-11 h-11 rounded-full flex items-center justify-center text-xl"
+            style={{ backgroundColor: "rgba(99,102,241,0.12)" }}
+          >
+            🗑️
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold mb-1" style={{ color: "var(--app-text-primary)" }}>
+              ¿Mover a la papelera?
+            </p>
+            <p className="text-xs" style={{ color: "var(--app-text-muted)" }}>
+              La nota se eliminará en 30 días si no la restauras.
+            </p>
+          </div>
+          <div className="flex gap-2 w-full mt-1">
+            <button
+              className="flex-1 text-xs px-3 py-1.5 rounded-lg transition-colors"
+              style={{
+                backgroundColor: "var(--app-hover)",
+                color:           "var(--app-text-secondary)",
+              }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+              }
+              onClick={() => setConfirmTrashOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="flex-1 text-xs px-3 py-1.5 rounded-lg transition-colors"
+              style={{ backgroundColor: "rgba(99,102,241,0.15)", color: "#818cf8" }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(99,102,241,0.25)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(99,102,241,0.15)")
+              }
+              onClick={() => {
+                onTrash?.(note.id);
+                setConfirmTrashOpen(false);
+              }}
+            >
+              Mover a papelera
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Permanent delete confirmation modal */}
+      <Modal open={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)}>
+        <div className="flex flex-col items-center gap-3 px-2 py-1">
+          <div
+            className="w-11 h-11 rounded-full flex items-center justify-center text-xl"
+            style={{ backgroundColor: "rgba(239,68,68,0.15)" }}
+          >
+            🗑
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold mb-1" style={{ color: "var(--app-text-primary)" }}>
+              ¿Eliminar esta nota?
+            </p>
+            <p className="text-xs" style={{ color: "var(--app-text-muted)" }}>
+              Esta acción es permanente y no se puede deshacer.
+            </p>
+          </div>
+          <div className="flex gap-2 w-full mt-1">
+            <button
+              className="flex-1 text-xs px-3 py-1.5 rounded-lg transition-colors"
+              style={{
+                backgroundColor: "var(--app-hover)",
+                color:           "var(--app-text-secondary)",
+              }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+              }
+              onClick={() => setConfirmDeleteOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="flex-1 text-xs px-3 py-1.5 rounded-lg transition-colors bg-red-500/15 text-red-400 hover:bg-red-500/25"
+              onClick={() => {
+                onDeletePermanent?.(note.id);
+                setConfirmDeleteOpen(false);
+              }}
+            >
+              Eliminar
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Word-count status bar */}
       <div
