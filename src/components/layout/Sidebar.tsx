@@ -7,6 +7,7 @@ import type { Notebook, Tag } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
 import { useState } from "react";
+import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 
 type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[]; _count?: { notes: number } };
 type TagWithCount = Tag & { _count: { noteTags: number } };
@@ -16,10 +17,13 @@ interface SidebarProps {
   tags: TagWithCount[];
   selectedNotebook: string | null;
   selectedTag: string | null;
-  view: "all" | "pinned" | "trash" | "notebook" | "tag";
+  selectedStatus: NoteStatus | null;
+  statusCounts: Record<NoteStatus, number>;
+  view: "all" | "pinned" | "trash" | "notebook" | "tag" | "status";
   onSelectView: (view: "all" | "pinned" | "trash") => void;
   onSelectNotebook: (id: string) => void;
   onSelectTag: (name: string) => void;
+  onSelectStatus: (status: NoteStatus) => void;
   onNewNotebook: (name: string) => void;
   onNewSubNotebook?: (parentId: string, name: string) => void;
   onRenameNotebook?: (id: string, name: string) => void;
@@ -37,10 +41,13 @@ export function Sidebar({
   tags,
   selectedNotebook,
   selectedTag,
+  selectedStatus,
+  statusCounts,
   view,
   onSelectView,
   onSelectNotebook,
   onSelectTag,
+  onSelectStatus,
   onNewNotebook,
   onNewSubNotebook,
   onRenameNotebook,
@@ -182,6 +189,55 @@ export function Sidebar({
               Sin notebooks aún
             </p>
           )}
+        </div>
+
+        {/* Statuses */}
+        <div>
+          <div className="flex items-center px-2 mb-1">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--app-text-muted)" }}
+            >
+              Statuses
+            </span>
+          </div>
+          <ul className="space-y-0.5">
+            {STATUS_ORDER.map((s) => {
+              const meta = STATUS_META[s];
+              const isActive = view === "status" && selectedStatus === s;
+              return (
+                <li key={s}>
+                  <button
+                    onClick={() => onSelectStatus(s)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors"
+                    style={{
+                      backgroundColor: isActive ? "rgba(99,102,241,0.15)" : undefined,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive)
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                          "var(--app-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive)
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+                    }}
+                  >
+                    <span className="text-[13px] leading-none">{meta.icon}</span>
+                    <span
+                      className="truncate"
+                      style={{ color: isActive ? "#6366f1" : "var(--app-text-secondary)" }}
+                    >
+                      {meta.label}
+                    </span>
+                    <span className="ml-auto" style={{ color: "var(--app-text-faint)" }}>
+                      {statusCounts[s] ?? 0}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         {/* Tags */}

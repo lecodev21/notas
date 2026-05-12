@@ -14,6 +14,7 @@ export const UpdateNoteSchema = z.object({
   tagIds: z.array(z.string().cuid()).optional(),
   isPinned: z.boolean().optional(),
   isTrashed: z.boolean().optional(),
+  status: z.enum(["active", "on_hold", "completed", "dropped"]).optional(),
 });
 
 export type CreateNoteInput = z.infer<typeof CreateNoteSchema>;

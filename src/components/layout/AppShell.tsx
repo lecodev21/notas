@@ -5,13 +5,14 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
 import { EditorPanel } from "./EditorPanel";
-import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from "@/hooks/useNotes";
+import { useNotes, useCreateNote, useUpdateNote, useDeleteNote, useStatusCounts } from "@/hooks/useNotes";
+import { STATUS_META as STATUS_META_MAP, type NoteStatus } from "@/lib/noteStatus";
 import { useNotebooks, useCreateNotebook, useUpdateNotebook, useDeleteNotebook } from "@/hooks/useNotebooks";
 import { useTags, useCreateTag, useDeleteTag } from "@/hooks/useTags";
 import { useSearch } from "@/hooks/useSearch";
 
 
-type ViewType = "all" | "pinned" | "trash" | "notebook" | "tag";
+type ViewType = "all" | "pinned" | "trash" | "notebook" | "tag" | "status";
 
 interface AppShellProps {
   initialNoteId?: string;
@@ -25,13 +26,15 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(
     initialNoteId ?? null
   );
+  const [selectedStatus, setSelectedStatus] = useState<NoteStatus | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
 
 
   // Data hooks
-  const notesFilter = buildFilter(view, selectedNotebook, selectedTag);
+  const notesFilter = buildFilter(view, selectedNotebook, selectedTag, selectedStatus);
   const { notes, loading: notesLoading } = useNotes(notesFilter);
+  const { counts: statusCounts } = useStatusCounts();
   const { notes: searchResults, loading: searchLoading } = useSearch(searchQuery);
   const { note: selectedNote, loading: noteLoading } = useNotes({ id: selectedNoteId });
   const { notebooks } = useNotebooks();
@@ -85,7 +88,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const displayedNotes = searchQuery.trim() ? searchResults : notes;
 
   // Context label
-  const contextLabel = getContextLabel(view, selectedNotebook, selectedTag, notebooks);
+  const contextLabel = getContextLabel(view, selectedNotebook, selectedTag, selectedStatus, notebooks);
 
   async function handleNewNote() {
     const note = await createNote({
@@ -98,7 +101,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     }
   }
 
-  async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[] }) {
+  async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) {
     // Before updating, figure out which tags are being removed from this note.
     // If a removed tag ends up with 0 notes after this update, delete it.
     let removedTagIds: string[] = [];
@@ -138,6 +141,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setView(v);
     setSelectedNotebook(null);
     setSelectedTag(null);
+    setSelectedStatus(null);
     setSelectedNoteId(null);
     setSearchQuery("");
   }
@@ -146,6 +150,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setView("notebook");
     setSelectedNotebook(id);
     setSelectedTag(null);
+    setSelectedStatus(null);
     setSelectedNoteId(null);
     setSearchQuery("");
   }
@@ -154,6 +159,16 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setView("tag");
     setSelectedTag(name);
     setSelectedNotebook(null);
+    setSelectedStatus(null);
+    setSelectedNoteId(null);
+    setSearchQuery("");
+  }
+
+  function handleSelectStatus(status: NoteStatus) {
+    setView("status");
+    setSelectedStatus(status);
+    setSelectedNotebook(null);
+    setSelectedTag(null);
     setSelectedNoteId(null);
     setSearchQuery("");
   }
@@ -210,10 +225,13 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             tags={tags}
             selectedNotebook={selectedNotebook}
             selectedTag={selectedTag}
+            selectedStatus={selectedStatus}
+            statusCounts={statusCounts as Record<NoteStatus, number>}
             view={view}
             onSelectView={handleSelectView}
             onSelectNotebook={handleSelectNotebook}
             onSelectTag={handleSelectTag}
+            onSelectStatus={handleSelectStatus}
             onNewNotebook={(name) => createNotebook({ name })}
             onNewSubNotebook={handleNewSubNotebook}
             onRenameNotebook={handleRenameNotebook}
@@ -233,6 +251,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             loading={notesLoading || searchLoading}
             selectedNoteId={selectedNoteId}
             contextLabel={searchQuery ? `Resultados: "${searchQuery}"` : contextLabel}
+            isTrashView={view === "trash"}
             onSelectNote={handleSelectNote}
             onNewNote={handleNewNote}
             onSearch={setSearchQuery}
@@ -269,12 +288,14 @@ export function AppShell({ initialNoteId }: AppShellProps) {
 function buildFilter(
   view: ViewType,
   notebookId: string | null,
-  tagName: string | null
+  tagName: string | null,
+  status: NoteStatus | null,
 ) {
-  if (view === "trash") return { trashed: "true" };
+  if (view === "trash")  return { trashed: "true" };
   if (view === "pinned") return { pinned: "true" };
   if (view === "notebook" && notebookId) return { notebookId };
-  if (view === "tag" && tagName) return { tag: tagName };
+  if (view === "tag"    && tagName) return { tag: tagName };
+  if (view === "status" && status)  return { status };
   return {};
 }
 
@@ -302,13 +323,18 @@ function getContextLabel(
   view: ViewType,
   notebookId: string | null,
   tagName: string | null,
+  status: NoteStatus | null,
   notebooks: { id: string; name: string }[]
 ): string {
-  if (view === "trash") return "Papelera";
+  if (view === "trash")  return "Papelera";
   if (view === "pinned") return "Notas fijadas";
   if (view === "notebook" && notebookId) {
     return notebooks.find((n) => n.id === notebookId)?.name ?? "Notebook";
   }
-  if (view === "tag" && tagName) return `#${tagName}`;
+  if (view === "tag"    && tagName) return `#${tagName}`;
+  if (view === "status" && status) {
+    const meta = STATUS_META_MAP[status];
+    return `${meta.icon}  ${meta.label}`;
+  }
   return "Todas las notas";
 }
