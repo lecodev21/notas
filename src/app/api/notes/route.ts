@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   const pinned = searchParams.get("pinned");
   const trashed = searchParams.get("trashed");
   const status = searchParams.get("status") as NoteStatus | null;
+  const allStatuses = searchParams.get("allStatuses") === "true";
 
   // Auto-purge: permanently delete trashed notes older than TRASH_TTL_DAYS.
   // Runs on every request to the notes list — cheap because the WHERE clause
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
       ? {}
       : status
       ? { status }
-      : isContextualView
+      : allStatuses || isContextualView
       ? {}
       : { status: { in: DEFAULT_VISIBLE_STATUSES } };
 

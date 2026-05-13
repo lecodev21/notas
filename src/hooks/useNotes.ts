@@ -22,6 +22,8 @@ interface NotesFilter {
   trashed?: string;
   status?: NoteStatus;
   id?: string | null;
+  /** Skip the DEFAULT_VISIBLE_STATUSES filter — returns all non-trashed notes */
+  allStatuses?: boolean;
 }
 
 export function useNotes(filter: NotesFilter = {}) {
@@ -45,6 +47,7 @@ export function useNotes(filter: NotesFilter = {}) {
   if (filter.pinned) params.set("pinned", filter.pinned);
   if (filter.trashed) params.set("trashed", filter.trashed);
   if (filter.status) params.set("status", filter.status);
+  if (filter.allStatuses) params.set("allStatuses", "true");
 
   const key = `/api/notes?${params.toString()}`;
   const { data, error, isLoading } = useSWR<{ notes: NoteWithRelations[] }>(
@@ -126,6 +129,7 @@ export function useUpdateNote() {
         ),
         globalMutate("/api/notebooks"),
         globalMutate("/api/status-counts"),
+        globalMutate("/api/tags"),
       ]);
     } else {
       await globalMutate(
@@ -183,6 +187,7 @@ export function useEmptyTrash() {
       ),
       globalMutate("/api/notebooks"),
       globalMutate("/api/status-counts"),
+      globalMutate("/api/tags"),
     ]);
     return true;
   }

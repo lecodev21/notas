@@ -49,9 +49,13 @@ interface MarkdownPreviewProps {
   content: string;
   /** Called with the 0-based index of the toggled task checkbox. */
   onToggleTask?: (taskIndex: number) => void;
+  /** Notes available for resolving [[wiki links]] */
+  availableNotes?: { id: string; title: string }[];
+  /** Called when a [[wiki link]] is clicked, with the linked title */
+  onWikiLinkClick?: (title: string) => void;
 }
 
-export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, onToggleTask, availableNotes: _availableNotes, onWikiLinkClick }: MarkdownPreviewProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -69,6 +73,10 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
   // Always points to the latest onToggleTask prop.
   const onToggleRef   = useRef(onToggleTask);
   onToggleRef.current = onToggleTask;
+
+  // Always points to the latest onWikiLinkClick prop.
+  const onWikiLinkClickRef   = useRef(onWikiLinkClick);
+  onWikiLinkClickRef.current = onWikiLinkClick;
 
   // Ref to the prose wrapper so we can querySelectorAll checkboxes inside it.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -318,6 +326,30 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         </div>
       );
     },
+    // ── Wiki links ───────────────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    a: ({ href, children }: any) => {
+      if (href?.startsWith("wiki://")) {
+        const title = decodeURIComponent(href.slice(7));
+        return (
+          <button
+            onClick={() => onWikiLinkClickRef.current?.(title)}
+            style={{
+              color:           "#6366f1",
+              textDecoration:  "underline",
+              cursor:          "pointer",
+              background:      "none",
+              border:          "none",
+              padding:         0,
+              font:            "inherit",
+            }}
+          >
+            {children}
+          </button>
+        );
+      }
+      return <a href={href}>{children}</a>;
+    },
     } as {
       input:  React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -336,6 +368,8 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
       td:     React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       pre:    React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      a:      React.ComponentType<any>;
     };
   });
 
@@ -370,6 +404,12 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
         ].join(" "),
   ].join(" ");
 
+  // Preprocess [[Title]] wiki links into standard markdown links with wiki:// scheme
+  const processedContent = content.replace(
+    /\[\[([^\]]+)\]\]/g,
+    (_, title) => `[${title}](wiki://${encodeURIComponent(title)})`
+  );
+
   return (
     <div className="px-6 py-4">
       <div ref={containerRef} className={proseClass}>
@@ -377,8 +417,9 @@ export function MarkdownPreview({ content, onToggleTask }: MarkdownPreviewProps)
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={components}
+            urlTransform={(url) => url}
           >
-            {content}
+            {processedContent}
           </ReactMarkdown>
         ) : (
           <p style={{ color: "var(--app-text-faint)" }} className="italic">

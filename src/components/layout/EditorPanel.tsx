@@ -15,6 +15,7 @@ import { NoteInfoPanel } from "@/components/notes/NoteInfoPanel";
 import { Modal } from "@/components/ui/Modal";
 import { CopyContextMenu } from "@/components/ui/CopyContextMenu";
 import { exportAsMarkdown, exportAsHtml, exportAsPdf } from "@/lib/exportNote";
+import { useBacklinks } from "@/hooks/useBacklinks";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -35,6 +36,12 @@ interface EditorPanelProps {
   onDeletePermanent?: (id: string) => void;
   /** Create a brand-new tag and return it (called when the user types a name that doesn't exist yet) */
   onCreateTag?: (name: string) => Promise<Tag | null>;
+  /** Notes for [[wiki link]] completion and backlink navigation */
+  availableNotes?: { id: string; title: string }[];
+  /** Called when clicking a [[wiki link]] to navigate to the linked note */
+  onNavigateToNote?: (noteId: string) => void;
+  /** Called when clicking a [[wiki link]] whose note doesn't exist yet — creates it */
+  onCreateAndNavigate?: (title: string) => Promise<void>;
 }
 
 type ViewMode = "edit" | "split" | "preview";
@@ -52,6 +59,9 @@ export function EditorPanel({
   onRestore,
   onDeletePermanent,
   onCreateTag,
+  availableNotes = [],
+  onNavigateToNote,
+  onCreateAndNavigate,
 }: EditorPanelProps) {
   const [mode, setMode] = useState<ViewMode>("edit");
   const [saving, setSaving] = useState(false);
@@ -223,6 +233,23 @@ export function EditorPanel({
     },
     [note, onUpdate]
   );
+
+  // ── Wiki link navigation ─────────────────────────────────────────────────
+  function handleWikiLinkClick(title: string) {
+    const found = availableNotes.find(
+      (n) => n.title.toLowerCase() === title.toLowerCase()
+    );
+    if (found && onNavigateToNote) {
+      onNavigateToNote(found.id);
+    } else if (!found && onCreateAndNavigate) {
+      // Note doesn't exist — create it and navigate to it
+      onCreateAndNavigate(title);
+    }
+  }
+
+  // ── Backlinks ────────────────────────────────────────────────────────────
+  const { backlinks } = useBacklinks(note?.id ?? null, note?.title ?? null);
+  const [backlinksOpen, setBacklinksOpen] = useState(true);
 
   // ── Word-count stats ─────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -498,6 +525,7 @@ export function EditorPanel({
               editorViewRef={editorViewRef}
               readableWidth={readableWidth}
               writingMode={writingMode}
+              availableNotes={availableNotes}
               onChange={(v) => {
                 setLocalBody(v);
                 debouncedSave("body", v);
@@ -519,6 +547,8 @@ export function EditorPanel({
               <NoteInfoPanel note={note} body={localBody} />
               <MarkdownPreviewWrapper
                 body={localBody}
+                availableNotes={availableNotes}
+                onWikiLinkClick={handleWikiLinkClick}
                 onToggleTask={note.isTrashed ? undefined : (idx) => {
                   const next = toggleTaskAtIndex(localBody, idx);
                   // Dispatch a targeted change to CodeMirror so it doesn't do
@@ -550,6 +580,61 @@ export function EditorPanel({
           </div>
         )}
       </div>
+
+      {/* Backlinks panel — shown below editor/preview when there are backlinks */}
+      {backlinks.length > 0 && (
+        <div
+          className="shrink-0"
+          style={{ borderTop: "1px solid var(--app-border)" }}
+        >
+          <button
+            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-left transition-colors"
+            style={{ color: "var(--app-text-muted)" }}
+            onClick={() => setBacklinksOpen((v) => !v)}
+          >
+            <span>🔗</span>
+            <span style={{ color: "var(--app-text-secondary)", fontWeight: 600 }}>
+              Backlinks ({backlinks.length})
+            </span>
+            <svg
+              className="w-3 h-3 ml-auto transition-transform"
+              style={{ transform: backlinksOpen ? "rotate(180deg)" : undefined }}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {backlinksOpen && (
+            <div
+              className="px-4 pb-3 space-y-2 max-h-40 overflow-y-auto"
+            >
+              {backlinks.map((bl) => (
+                <button
+                  key={bl.id}
+                  className="w-full text-left rounded-lg px-3 py-2 transition-colors"
+                  style={{ backgroundColor: "var(--app-hover)" }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover-strong)")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+                  }
+                  onClick={() => onNavigateToNote?.(bl.id)}
+                >
+                  <p className="text-xs font-medium" style={{ color: "var(--app-text-primary)" }}>
+                    {bl.title}
+                  </p>
+                  {bl.snippet && (
+                    <p className="text-xs mt-0.5 line-clamp-2" style={{ color: "var(--app-text-muted)" }}>
+                      {bl.snippet}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Copy context menu — editor & preview areas */}
       {ctxMenu && (
@@ -1081,14 +1166,20 @@ function toggleTaskAtIndex(body: string, idx: number): string {
 type PreviewComponent = React.ComponentType<{
   content: string;
   onToggleTask?: (taskIndex: number) => void;
+  availableNotes?: { id: string; title: string }[];
+  onWikiLinkClick?: (title: string) => void;
 }>;
 
 function MarkdownPreviewWrapper({
   body,
   onToggleTask,
+  availableNotes,
+  onWikiLinkClick,
 }: {
   body: string;
   onToggleTask?: (taskIndex: number) => void;
+  availableNotes?: { id: string; title: string }[];
+  onWikiLinkClick?: (title: string) => void;
 }) {
   const [Preview, setPreview] = useState<PreviewComponent | null>(null);
 
@@ -1100,5 +1191,12 @@ function MarkdownPreviewWrapper({
 
   if (!Preview)
     return <div className="px-6 py-4"><Spinner className="text-gray-500" /></div>;
-  return <Preview content={body} onToggleTask={onToggleTask} />;
+  return (
+    <Preview
+      content={body}
+      onToggleTask={onToggleTask}
+      availableNotes={availableNotes}
+      onWikiLinkClick={onWikiLinkClick}
+    />
+  );
 }

@@ -35,6 +35,10 @@ import {
   type SlashCommand,
   type SlashCommandCallbacks,
 } from "./slashCommandExtension";
+import {
+  createWikiLinkExtension,
+  type WikiLinkCallbacks,
+} from "./wikiLinkExtension";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -60,6 +64,8 @@ export interface MarkdownEditorProps {
   readableWidth?: boolean;
   /** Distraction-free writing mode: typewriter (auto-centre) or paragraph (dim rest) */
   writingMode?: WritingMode;
+  /** Notes available for [[wiki link]] completion */
+  availableNotes?: { id: string; title: string }[];
 }
 
 // ── Heading size decorations ───────────────────────────────────────────────
@@ -710,6 +716,87 @@ const taskTheme = EditorView.theme({
   ".cm-task-checkbox": { cursor: "pointer" },
 });
 
+// ── Wiki link decorations + click-to-navigate in the editor ───────────────
+// Complete [[Title]] spans get a pointer-cursor + indigo underline so users
+// know they're clickable.  Clicking navigates to (or creates) the linked note.
+
+const _wikiLinkDeco = Decoration.mark({ class: "cm-wiki-link" });
+
+function buildWikiLinkDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const { from: vFrom, to: vTo } = view.viewport;
+
+  for (let pos = vFrom; pos <= vTo; ) {
+    const line = view.state.doc.lineAt(pos);
+    const re = /\[\[([^\]\n]+)\]\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(line.text)) !== null) {
+      const mFrom = line.from + match.index;
+      const mTo   = mFrom + match[0].length;
+      if (mTo >= vFrom && mFrom <= vTo) {
+        builder.add(mFrom, mTo, _wikiLinkDeco);
+      }
+    }
+    pos = line.to + 1;
+  }
+  return builder.finish();
+}
+
+const wikiLinkDecorationsPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) { this.decorations = buildWikiLinkDecorations(view); }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) this.decorations = buildWikiLinkDecorations(u.view);
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+/** Returns { from, to, title } if `pos` is inside a complete [[…]] pattern, else null. */
+function getWikiLinkAt(
+  state: EditorState,
+  pos: number,
+): { from: number; to: number; title: string } | null {
+  const line = state.doc.lineAt(pos);
+  const re = /\[\[([^\]\n]+)\]\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(line.text)) !== null) {
+    const from = line.from + match.index;
+    const to   = from + match[0].length;
+    if (pos >= from && pos <= to) {
+      return { from, to, title: match[1].trim() };
+    }
+  }
+  return null;
+}
+
+function createWikiLinkEditorClickExtension(
+  cbRef: { current: ((title: string) => void) | undefined },
+) {
+  return EditorView.domEventHandlers({
+    mousedown(event, view) {
+      if (!cbRef.current) return false;
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos === null) return false;
+      const wl = getWikiLinkAt(view.state, pos);
+      if (!wl) return false;
+      const title = wl.title;
+      // Defer so CodeMirror's own mousedown handling finishes first
+      setTimeout(() => cbRef.current?.(title), 0);
+      event.preventDefault();
+      return true;
+    },
+  });
+}
+
+const wikiLinkEditorTheme = EditorView.theme({
+  ".cm-wiki-link": {
+    color:          "#818cf8",
+    textDecoration: "underline",
+  },
+});
+
 // ── Markdown inline decorations ────────────────────────────────────────────
 // Walks the Lezer syntax tree inside the visible viewport and applies visual
 // decorations for inline Markdown:
@@ -938,8 +1025,90 @@ function SlashCommandMenu({ commands, selectedIdx, coords, onSelect, onHover }: 
   );
 }
 
+// ── Wiki link menu overlay ─────────────────────────────────────────────────
+
+interface WikiLinkMenuProps {
+  notes:       { id: string; title: string }[];
+  selectedIdx: number;
+  coords:      { top: number; left: number };
+  onSelect:    (note: { id: string; title: string }) => void;
+  onHover:     (idx: number) => void;
+}
+
+function WikiLinkMenu({ notes, selectedIdx, coords, onSelect, onHover }: WikiLinkMenuProps) {
+  const selectedRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedIdx]);
+
+  const menuStyle: React.CSSProperties = {
+    position:        "fixed",
+    top:             coords.top + 6,
+    left:            coords.left,
+    zIndex:          9999,
+    width:           240,
+    maxHeight:       280,
+    overflowY:       "auto",
+    borderRadius:    "10px",
+    boxShadow:       "0 8px 28px rgba(0,0,0,0.35)",
+    backgroundColor: "var(--app-bg-menu)",
+    border:          "1px solid var(--app-border-strong)",
+    padding:         "4px",
+  };
+
+  if (notes.length === 0) {
+    return (
+      <div style={{ ...menuStyle, padding: "10px 14px" }}>
+        <span style={{ fontSize: "12px", color: "var(--app-text-muted)" }}>
+          Sin resultados
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={menuStyle}>
+      {notes.map((note, i) => {
+        const active = i === selectedIdx;
+        return (
+          <button
+            key={note.id}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ref={active ? (selectedRef as any) : undefined}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left transition-colors"
+            style={{
+              backgroundColor: active ? "var(--app-hover-strong)" : undefined,
+              color:           active ? "var(--app-text-primary)" : "var(--app-text-secondary)",
+            }}
+            onMouseEnter={() => onHover(i)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onSelect(note);
+            }}
+          >
+            <span
+              className="flex items-center justify-center rounded shrink-0"
+              style={{
+                width:           24,
+                height:          24,
+                fontSize:        "11px",
+                backgroundColor: "var(--app-hover)",
+                color:           "var(--app-text-primary)",
+              }}
+            >
+              🔗
+            </span>
+            <span className="text-xs truncate">{note.title}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
-export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode, availableNotes = [] }: MarkdownEditorProps) {
   const { theme } = useTheme();
   const handleChange = useCallback((val: string) => onChange(val), [onChange]);
 
@@ -988,9 +1157,67 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const slashExts = useMemo(() => createSlashCommandExtension(slashCbRef), []);
 
+  // ── Wiki link menu state ─────────────────────────────────────────────────
+  const [wikiMenuState, setWikiMenuState] = useState<{
+    query:  string;
+    coords: { top: number; left: number };
+    from:   number;
+  } | null>(null);
+  const [wikiSelectedIdx, setWikiSelectedIdx] = useState(0);
+
+  // Filter notes by query (case-insensitive, max 8 results)
+  const filteredWikiNotes = wikiMenuState
+    ? availableNotes
+        .filter((n) => n.title.toLowerCase().includes(wikiMenuState.query.toLowerCase()))
+        .slice(0, 8)
+    : [];
+  const clampedWikiIdx =
+    filteredWikiNotes.length > 0
+      ? Math.min(wikiSelectedIdx, filteredWikiNotes.length - 1)
+      : 0;
+
+  // Always-current "apply selected wiki link" ref
+  const applyWikiRef = useRef<() => void>(() => {});
+  applyWikiRef.current = () => {
+    const note = filteredWikiNotes[clampedWikiIdx];
+    if (!note || !wikiMenuState || !internalViewRef.current) return;
+    const view = internalViewRef.current;
+    const head = view.state.selection.main.head;
+    // closeBrackets auto-inserts `]]` right after the cursor when the user
+    // types `[[`, leaving `[[query|]]`.  Consume those trailing `]]` so the
+    // result is `[[Title]]` not `[[Title]]]]`.
+    const trailingClose = view.state.sliceDoc(head, head + 2) === "]]" ? 2 : 0;
+    view.dispatch({
+      changes: {
+        from: wikiMenuState.from,
+        to:   head + trailingClose,
+        insert: `[[${note.title}]]`,
+      },
+    });
+    view.focus();
+    setWikiMenuState(null);
+    setWikiSelectedIdx(0);
+  };
+
+  const wikiCbRef = useRef<WikiLinkCallbacks>({
+    open:      (query, coords, from) => { setWikiMenuState({ query, coords, from }); setWikiSelectedIdx(0); },
+    update:    (query, coords) => { setWikiMenuState((p) => p ? { ...p, query, coords } : null); setWikiSelectedIdx(0); },
+    close:     () => { setWikiMenuState(null); setWikiSelectedIdx(0); },
+    arrowUp:   () => setWikiSelectedIdx((i) => Math.max(0, i - 1)),
+    arrowDown: () => setWikiSelectedIdx((i) => i + 1),
+    enter:     () => applyWikiRef.current(),
+  });
+
+  // Create wiki link extension once
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const wikiExts = useMemo(() => createWikiLinkExtension(wikiCbRef), []);
+
   const extensions = [
     ...sharedExtensions,
     ...slashExts,
+    ...wikiExts,
+    wikiLinkDecorationsPlugin,
+    wikiLinkEditorTheme,
     // Syntax highlight style — matches the hljs preview palette exactly.
     // Prec.highest overrides the bundled highlight style from oneDark.
     Prec.highest(syntaxHighlighting(theme === "dark" ? darkHighlightStyle : lightHighlightStyle)),
@@ -1016,6 +1243,31 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
             setSlashSelectedIdx(0);
           }}
           onHover={(idx) => setSlashSelectedIdx(idx)}
+        />
+      )}
+      {/* Wiki link menu — same fixed-position pattern */}
+      {wikiMenuState && (
+        <WikiLinkMenu
+          notes={filteredWikiNotes}
+          selectedIdx={clampedWikiIdx}
+          coords={wikiMenuState.coords}
+          onSelect={(note) => {
+            if (!internalViewRef.current) return;
+            const view = internalViewRef.current;
+            const head = view.state.selection.main.head;
+            const trailingClose = view.state.sliceDoc(head, head + 2) === "]]" ? 2 : 0;
+            view.dispatch({
+              changes: {
+                from:   wikiMenuState.from,
+                to:     head + trailingClose,
+                insert: `[[${note.title}]]`,
+              },
+            });
+            view.focus();
+            setWikiMenuState(null);
+            setWikiSelectedIdx(0);
+          }}
+          onHover={(idx) => setWikiSelectedIdx(idx)}
         />
       )}
       <div

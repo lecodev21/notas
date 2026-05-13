@@ -7,6 +7,7 @@ import type { Notebook, Tag } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
 import { useState } from "react";
+import Link from "next/link";
 import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 
 type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[]; _count?: { notes: number } };
@@ -119,6 +120,13 @@ export function Sidebar({
               </li>
             );
           })}
+        </ul>
+
+        {/* Graph */}
+        <ul className="space-y-0.5">
+          <li>
+            <GraphNavItem />
+          </li>
         </ul>
 
         {/* Notebooks */}
@@ -333,6 +341,26 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+function GraphNavItem() {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Link
+      href="/graph"
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors"
+      style={{
+        backgroundColor: hovered ? "var(--app-hover)" : undefined,
+        color: "var(--app-text-muted)",
+        textDecoration: "none",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <span>🕸</span>
+      <span style={{ color: "var(--app-text-secondary)" }}>Grafo de notas</span>
+    </Link>
   );
 }
 

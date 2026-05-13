@@ -47,6 +47,8 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const { counts: statusCounts } = useStatusCounts();
   const { notes: searchResults, loading: searchLoading } = useSearch(searchQuery);
   const { note: selectedNote, loading: noteLoading } = useNotes({ id: selectedNoteId });
+  // All notes (all statuses, non-trashed) — used for wiki link autocomplete and navigation
+  const { notes: allNotes } = useNotes({ allStatuses: true });
   const { notebooks } = useNotebooks();
   const { tags, mutateTags } = useTags();
 
@@ -212,7 +214,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     await updateNote(id, { isPinned: !isPinned });
   }
 
-  async function handleImport(files: FileList): Promise<ImportResult | null> {
+  async function handleImport(files: FileList | File[]): Promise<ImportResult | null> {
     const mdFiles = Array.from(files).filter(
       (f) => f.name.toLowerCase().endsWith(".md") && !f.name.startsWith(".")
     );
@@ -490,6 +492,12 @@ export function AppShell({ initialNoteId }: AppShellProps) {
           onTrash={handleTrash}
           onRestore={handleRestore}
           onDeletePermanent={handleDeletePermanent}
+          availableNotes={allNotes.map((n) => ({ id: n.id, title: n.title }))}
+          onNavigateToNote={handleSelectNote}
+          onCreateAndNavigate={async (title) => {
+            const note = await createNote({ title, notebookId: selectedNotebook ?? undefined });
+            if (note) handleSelectNote(note.id);
+          }}
         />
       </div>
 
