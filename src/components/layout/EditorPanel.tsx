@@ -13,6 +13,8 @@ import { MarkdownToolbar } from "@/components/editor/MarkdownToolbar";
 import { FindReplaceBar } from "@/components/editor/FindReplaceBar";
 import { NoteInfoPanel } from "@/components/notes/NoteInfoPanel";
 import { Modal } from "@/components/ui/Modal";
+import { CopyContextMenu } from "@/components/ui/CopyContextMenu";
+import { exportAsMarkdown, exportAsHtml, exportAsPdf } from "@/lib/exportNote";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -57,6 +59,15 @@ export function EditorPanel({
   const [writingMode, setWritingMode] = useState<WritingMode>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmTrashOpen,  setConfirmTrashOpen]  = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number; y: number; selectedText: string;
+  } | null>(null);
+
+  function handleContentContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    const selectedText = window.getSelection()?.toString() ?? "";
+    setCtxMenu({ x: e.clientX, y: e.clientY, selectedText });
+  }
 
   function toggleWritingMode() {
     setWritingMode((prev) => (prev === "focus" ? null : "focus"));
@@ -328,7 +339,6 @@ export function EditorPanel({
             title={writingMode === "focus" ? "Desactivar modo de escritura enfocada" : "Modo de escritura enfocada — centra la línea activa y atenúa el resto"}
             className={writingMode === "focus" ? "text-indigo-400" : ""}
           >
-            {/* Zen / focus icon: text lines with a highlight on the middle */}
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -336,6 +346,11 @@ export function EditorPanel({
                 fill="currentColor" opacity="0.15" stroke="none" />
             </svg>
           </Button>
+
+          <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+
+          {/* Export dropdown */}
+          <ExportMenu title={localTitle} body={localBody} />
         </div>
 
         <div className="flex items-center gap-1">
@@ -459,6 +474,7 @@ export function EditorPanel({
               mode === "split" ? "w-1/2" : "w-full",
             )}
             style={mode === "split" ? { borderRight: "1px solid var(--app-border)" } : undefined}
+            onContextMenu={handleContentContextMenu}
             onKeyDown={(e) => {
               // Ctrl/Cmd+F opens in-editor find-replace and prevents the global
               // note-list search from activating (stopPropagation via nativeEvent
@@ -497,6 +513,7 @@ export function EditorPanel({
               "overflow-y-auto",
               mode === "split" ? "w-1/2" : "w-full",
             )}
+            onContextMenu={handleContentContextMenu}
           >
             <div style={readableWidth ? { maxWidth: 680, margin: "0 auto" } : undefined}>
               <NoteInfoPanel note={note} body={localBody} />
@@ -533,6 +550,16 @@ export function EditorPanel({
           </div>
         )}
       </div>
+
+      {/* Copy context menu — editor & preview areas */}
+      {ctxMenu && (
+        <CopyContextMenu
+          body={localBody}
+          selectedText={ctxMenu.selectedText}
+          coords={{ x: ctxMenu.x, y: ctxMenu.y }}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
 
       {/* Move to trash confirmation modal */}
       <Modal open={confirmTrashOpen} onClose={() => setConfirmTrashOpen(false)}>
@@ -649,6 +676,102 @@ export function EditorPanel({
         <span style={{ color: "var(--app-border-strong)" }}>·</span>
         <span>{stats.mins} {stats.mins === 1 ? "min" : "mins"} de lectura</span>
       </div>
+    </div>
+  );
+}
+
+// ── Export menu ───────────────────────────────────────────────────────────────
+
+function ExportMenu({ title, body }: { title: string; body: string }) {
+  const [open, setOpen]       = useState(false);
+  const [busy, setBusy]       = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  async function handle(format: "md" | "html" | "pdf") {
+    setBusy(format);
+    setOpen(false);
+    try {
+      if (format === "md")   exportAsMarkdown(title, body);
+      if (format === "html") await exportAsHtml(title, body);
+      if (format === "pdf")  await exportAsPdf(title, body);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const ITEMS = [
+    { format: "md"   as const, icon: "📄", label: "Exportar como Markdown" },
+    { format: "html" as const, icon: "🌐", label: "Exportar como HTML"     },
+    { format: "pdf"  as const, icon: "📑", label: "Exportar como PDF"      },
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => setOpen((v) => !v)}
+        title="Exportar nota"
+        className={open ? "text-indigo-400" : ""}
+      >
+        {busy ? (
+          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 11-8 8z" />
+          </svg>
+        ) : (
+          /* Download / export icon */
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+          </svg>
+        )}
+      </Button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-40 rounded-lg shadow-xl py-1"
+          style={{
+            backgroundColor: "var(--app-bg-menu)",
+            border:          "1px solid var(--app-border-strong)",
+            minWidth:        210,
+          }}
+        >
+          <p
+            className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--app-text-muted)" }}
+          >
+            Exportar nota
+          </p>
+          <div style={{ borderTop: "1px solid var(--app-border)" }} className="mt-0.5 pt-0.5" />
+          {ITEMS.map(({ format, icon, label }) => (
+            <button
+              key={format}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors"
+              style={{ color: "var(--app-text-secondary)" }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
+              }
+              onClick={() => handle(format)}
+            >
+              <span>{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

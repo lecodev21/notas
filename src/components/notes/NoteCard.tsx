@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn, formatDate, getExcerpt, truncate } from "@/lib/utils";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import { STATUS_META, type NoteStatus } from "@/lib/noteStatus";
+import { CopyContextMenu } from "@/components/ui/CopyContextMenu";
 
 const TRASH_TTL_DAYS = 30;
 
@@ -38,9 +39,12 @@ export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) 
   const excerpt    = getExcerpt(note.body);
   const tasks      = parseTasks(note.body);
   const [dragging, setDragging] = useState(false);
+  const [ctxMenu, setCtxMenu]   = useState<{ x: number; y: number } | null>(null);
 
   return (
+    <>
     <button
+      onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       draggable
       onClick={onClick}
       onDragStart={(e) => {
@@ -182,5 +186,14 @@ export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) 
         );
       })()}
     </button>
+
+    {ctxMenu && (
+      <CopyContextMenu
+        body={note.body}
+        coords={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+      />
+    )}
+    </>
   );
 }
