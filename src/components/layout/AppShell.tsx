@@ -10,9 +10,18 @@ import { STATUS_META as STATUS_META_MAP, type NoteStatus } from "@/lib/noteStatu
 import { useNotebooks, useCreateNotebook, useUpdateNotebook, useDeleteNotebook } from "@/hooks/useNotebooks";
 import { useTags, useCreateTag, useDeleteTag } from "@/hooks/useTags";
 import { useSearch } from "@/hooks/useSearch";
+import { parseFrontmatter } from "@/lib/parseFrontmatter";
+import { extractObsidianTags } from "@/lib/extractObsidianTags";
 
 
 type ViewType = "all" | "pinned" | "trash" | "notebook" | "tag" | "status";
+
+export interface ImportResult {
+  notes: number;
+  notebooks: number;
+  tags: number;
+  notebookNames: string[];
+}
 
 interface AppShellProps {
   initialNoteId?: string;
@@ -203,6 +212,195 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     await updateNote(id, { isPinned: !isPinned });
   }
 
+  async function handleImport(files: FileList): Promise<ImportResult | null> {
+    const mdFiles = Array.from(files).filter(
+      (f) => f.name.toLowerCase().endsWith(".md") && !f.name.startsWith(".")
+    );
+    if (mdFiles.length === 0) return null;
+
+    let notesCreated    = 0;
+    let notebooksCreated = 0;
+    let tagsCreated     = 0;
+    const notebookNamesCreated: string[] = [];
+
+    // Detect mode: folder import if any file has a path with "/"
+    const isFolderImport = mdFiles.some((f) => f.webkitRelativePath?.includes("/"));
+
+    const TAG_PALETTE = [
+      "#6366f1","#8b5cf6","#ec4899","#ef4444",
+      "#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16",
+    ];
+
+    // ── Shared helpers ──────────────────────────────────────────────────────
+
+    // Cache keyed by lowercased path (e.g. "trabajo" or "trabajo/backend") → notebook id
+    const notebookCache = new Map<string, string>();
+    const tagCache      = new Map<string, string>(); // lowercaseName → id
+
+    /** Find or create a notebook.  pathKey is the full lowercased path. */
+    async function resolveNotebook(
+      pathKey: string,
+      name: string,
+      parentId?: string,
+    ): Promise<string | undefined> {
+      const cached = notebookCache.get(pathKey);
+      if (cached) return cached;
+
+      // Search existing notebooks (match name + parentId)
+      const existing = notebooks.find(
+        (n) =>
+          n.name.toLowerCase() === name.toLowerCase() &&
+          (parentId ? n.parentId === parentId : !n.parentId),
+      );
+      if (existing) {
+        notebookCache.set(pathKey, existing.id);
+        return existing.id;
+      }
+
+      const newNb = await createNotebook({ name, parentId: parentId ?? null });
+      if (newNb) {
+        notebookCache.set(pathKey, newNb.id);
+        notebooksCreated++;
+        notebookNamesCreated.push(name);
+        return newNb.id;
+      }
+      return undefined;
+    }
+
+    /** Find or create tags from an array of names. Returns resolved ids. */
+    async function resolveTags(tagNames: string[]): Promise<string[]> {
+      const ids: string[] = [];
+      for (const rawName of tagNames) {
+        const name = rawName.trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+
+        const cached = tagCache.get(key);
+        if (cached) { ids.push(cached); continue; }
+
+        const existing = tags.find((t) => t.name.toLowerCase() === key);
+        if (existing) { ids.push(existing.id); tagCache.set(key, existing.id); continue; }
+
+        const color  = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
+        const newTag = await createTag({ name, color });
+        if (newTag) { tagCache.set(key, newTag.id); ids.push(newTag.id); tagsCreated++; }
+      }
+      return ids;
+    }
+
+    // ── Folder import ────────────────────────────────────────────────────────
+    // webkitRelativePath = "RootFolder/Notebook/SubNotebook/file.md"
+    // Index 0 = root (vault name) — skip it.
+    // Indexes 1..n-1 = notebook hierarchy.
+    // Last index = filename.
+
+    if (isFolderImport) {
+      // Collect every unique folder path and its actual display name.
+      // Rule:
+      //   • File directly in root (parts.length === 2):  root folder itself = notebook
+      //     key = parts[0].toLowerCase()
+      //   • File inside subfolder (parts.length > 2):    subfolder hierarchy = notebooks
+      //     keys = parts[1..n-2] (skip root, skip filename)
+      const pathDisplayName = new Map<string, string>(); // lowercaseKey → displayName
+
+      for (const file of mdFiles) {
+        const parts = file.webkitRelativePath.split("/");
+        if (parts.length === 2) {
+          // e.g. "MyVault/note.md" → notebook "MyVault"
+          const key = parts[0].toLowerCase();
+          if (!pathDisplayName.has(key)) pathDisplayName.set(key, parts[0]);
+        } else {
+          // e.g. "MyVault/Trabajo/Backend/note.md" → creates "Trabajo" + "Trabajo/Backend"
+          for (let depth = 1; depth < parts.length - 1; depth++) {
+            const key = parts.slice(1, depth + 1).map((p) => p.toLowerCase()).join("/");
+            if (!pathDisplayName.has(key)) pathDisplayName.set(key, parts[depth]);
+          }
+        }
+      }
+
+      // Sort paths shortest-first so parents are created before children
+      const sortedPaths = Array.from(pathDisplayName.keys()).sort(
+        (a, b) => a.split("/").length - b.split("/").length,
+      );
+
+      // Pre-create all notebooks in order
+      for (const pathKey of sortedPaths) {
+        const parts    = pathKey.split("/");
+        const name     = pathDisplayName.get(pathKey)!;
+        const parentKey = parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+        const parentId  = parentKey ? notebookCache.get(parentKey) : undefined;
+        await resolveNotebook(pathKey, name, parentId);
+      }
+
+      // Import each file
+      for (const file of mdFiles) {
+        const parts = file.webkitRelativePath.split("/");
+        const nbPathKey =
+          parts.length === 2
+            ? parts[0].toLowerCase()                                                    // root folder
+            : parts.slice(1, parts.length - 1).map((p) => p.toLowerCase()).join("/"); // subfolder path
+        const notebookId = notebookCache.get(nbPathKey);
+
+        const content = await file.text();
+        const { frontmatter, body: rawBody } = parseFrontmatter(content);
+
+        // Extract Obsidian-style inline tags (#tag) and get cleaned body
+        const { tags: inlineTags, cleanBody } = extractObsidianTags(rawBody);
+
+        const title =
+          frontmatter.title?.trim() ||
+          file.name.replace(/\.md$/i, "").replace(/[-_]+/g, " ").trim() ||
+          "Sin título";
+
+        const note = await createNote({ title, body: cleanBody, notebookId });
+        if (!note) continue;
+        notesCreated++;
+
+        // Merge frontmatter tags + inline Obsidian tags (deduplicated)
+        const allTagNames = mergeTagNames(frontmatter.tags ?? [], inlineTags);
+        if (allTagNames.length) {
+          const tagIds = await resolveTags(allTagNames);
+          if (tagIds.length) await updateNote(note.id, { tagIds });
+        }
+      }
+
+    // ── File import (frontmatter mode) ────────────────────────────────────
+    } else {
+      for (const file of mdFiles) {
+        const content = await file.text();
+        const { frontmatter, body: rawBody } = parseFrontmatter(content);
+
+        // Extract Obsidian-style inline tags (#tag) and get cleaned body
+        const { tags: inlineTags, cleanBody } = extractObsidianTags(rawBody);
+
+        const title =
+          frontmatter.title?.trim() ||
+          file.name.replace(/\.md$/i, "").replace(/[-_]+/g, " ").trim() ||
+          "Sin título";
+
+        let notebookId: string | undefined;
+        if (frontmatter.notebook) {
+          const nbName = frontmatter.notebook.trim();
+          notebookId   = await resolveNotebook(nbName.toLowerCase(), nbName, undefined);
+        }
+
+        const note = await createNote({ title, body: cleanBody, notebookId });
+        if (!note) continue;
+        notesCreated++;
+
+        // Merge frontmatter tags + inline Obsidian tags (deduplicated)
+        const allTagNames = mergeTagNames(frontmatter.tags ?? [], inlineTags);
+        if (allTagNames.length) {
+          const tagIds = await resolveTags(allTagNames);
+          if (tagIds.length) await updateNote(note.id, { tagIds });
+        }
+      }
+    }
+
+    await mutateTags();
+    return { notes: notesCreated, notebooks: notebooksCreated, tags: tagsCreated, notebookNames: notebookNamesCreated };
+  }
+
   async function handleNewSubNotebook(parentId: string, name: string) {
     await createNotebook({ name, parentId });
   }
@@ -269,6 +467,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             onSelectNote={handleSelectNote}
             onNewNote={handleNewNote}
             onSearch={setSearchQuery}
+            onImport={handleImport}
           />
         </div>
       </div>
@@ -296,6 +495,21 @@ export function AppShell({ initialNoteId }: AppShellProps) {
 
     </div>
   );
+}
+
+// ── Import helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Merges two lists of tag names, deduplicating case-insensitively.
+ * The first occurrence (from `a` then `b`) wins for casing.
+ */
+function mergeTagNames(a: string[], b: string[]): string[] {
+  const seen = new Map<string, string>(); // lowercase → original
+  for (const name of [...a, ...b]) {
+    const key = name.trim().toLowerCase();
+    if (key && !seen.has(key)) seen.set(key, name.trim());
+  }
+  return Array.from(seen.values());
 }
 
 // Helpers
