@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { type MutableRefObject, useCallback } from "react";
+import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -28,6 +28,13 @@ import { EMOJIS } from "./emojiData";
 import { findReplaceExtension } from "./findReplaceExtension";
 import { tableEditingExtension } from "./tableEditingExtension";
 import { typewriterExtension, paragraphFocusExtension } from "./writingModeExtension";
+import {
+  applySlashCommand,
+  createSlashCommandExtension,
+  filterSlashCommands,
+  type SlashCommand,
+  type SlashCommandCallbacks,
+} from "./slashCommandExtension";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -846,13 +853,144 @@ const sharedExtensions = [
   tableEditingExtension,
 ];
 
+// ── Slash command menu overlay ────────────────────────────────────────────
+
+interface SlashMenuProps {
+  commands:    SlashCommand[];
+  selectedIdx: number;
+  coords:      { top: number; left: number };
+  onSelect:    (cmd: SlashCommand) => void;
+  onHover:     (idx: number) => void;
+}
+
+function SlashCommandMenu({ commands, selectedIdx, coords, onSelect, onHover }: SlashMenuProps) {
+  const selectedRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedIdx]);
+
+  const menuStyle: React.CSSProperties = {
+    position:        "fixed",
+    top:             coords.top + 6,
+    left:            coords.left,
+    zIndex:          9999,
+    width:           228,
+    maxHeight:       288,
+    overflowY:       "auto",
+    borderRadius:    "10px",
+    boxShadow:       "0 8px 28px rgba(0,0,0,0.35)",
+    backgroundColor: "var(--app-bg-menu)",
+    border:          "1px solid var(--app-border-strong)",
+    padding:         "4px",
+  };
+
+  if (commands.length === 0) {
+    return (
+      <div style={{ ...menuStyle, padding: "10px 14px" }}>
+        <span style={{ fontSize: "12px", color: "var(--app-text-muted)" }}>
+          Sin resultados
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={menuStyle}>
+      {commands.map((cmd, i) => {
+        const active = i === selectedIdx;
+        return (
+          <button
+            key={cmd.id}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ref={active ? (selectedRef as any) : undefined}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left transition-colors"
+            style={{
+              backgroundColor: active ? "var(--app-hover-strong)" : undefined,
+              color:           active ? "var(--app-text-primary)" : "var(--app-text-secondary)",
+            }}
+            onMouseEnter={() => onHover(i)}
+            onMouseDown={(e) => {
+              e.preventDefault(); // keep editor focused
+              onSelect(cmd);
+            }}
+          >
+            {/* Icon badge */}
+            <span
+              className="flex items-center justify-center rounded shrink-0"
+              style={{
+                width:           28,
+                height:          28,
+                fontSize:        "11px",
+                fontFamily:      "monospace",
+                fontWeight:      700,
+                backgroundColor: "var(--app-hover)",
+                color:           "var(--app-text-primary)",
+              }}
+            >
+              {cmd.icon}
+            </span>
+            <span className="text-xs">{cmd.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode }: MarkdownEditorProps) {
   const { theme } = useTheme();
   const handleChange = useCallback((val: string) => onChange(val), [onChange]);
 
+  // ── Internal view ref (needed to apply slash commands) ──────────────────
+  const internalViewRef = useRef<EditorView | null>(null);
+
+  // ── Slash command menu state ─────────────────────────────────────────────
+  const [slashMenuState, setSlashMenuState] = useState<{
+    query:  string;
+    coords: { top: number; left: number };
+    from:   number;
+  } | null>(null);
+  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
+
+  const filteredSlashCommands = slashMenuState
+    ? filterSlashCommands(slashMenuState.query)
+    : [];
+  const clampedSlashIdx =
+    filteredSlashCommands.length > 0
+      ? Math.min(slashSelectedIdx, filteredSlashCommands.length - 1)
+      : 0;
+
+  // Always-current "apply selected command" — updated each render so the
+  // `enter` callback never closes over stale state.
+  const applyCurrentRef = useRef<() => void>(() => {});
+  applyCurrentRef.current = () => {
+    const cmd = filteredSlashCommands[clampedSlashIdx];
+    if (!cmd || !slashMenuState || !internalViewRef.current) return;
+    applySlashCommand(internalViewRef.current, cmd, slashMenuState.from);
+    setSlashMenuState(null);
+    setSlashSelectedIdx(0);
+  };
+
+  // Stable callback object — React setState setters are stable references,
+  // and applyCurrentRef is a mutable ref, so this object never needs updating.
+  const slashCbRef = useRef<SlashCommandCallbacks>({
+    open:      (query, coords, from) => { setSlashMenuState({ query, coords, from }); setSlashSelectedIdx(0); },
+    update:    (query, coords) => { setSlashMenuState((p) => p ? { ...p, query, coords } : null); setSlashSelectedIdx(0); },
+    close:     () => { setSlashMenuState(null); setSlashSelectedIdx(0); },
+    arrowUp:   () => setSlashSelectedIdx((i) => Math.max(0, i - 1)),
+    arrowDown: () => setSlashSelectedIdx((i) => i + 1),
+    enter:     () => applyCurrentRef.current(),
+  });
+
+  // Create extension once — ViewPlugin + Prec.highest keymap
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const slashExts = useMemo(() => createSlashCommandExtension(slashCbRef), []);
+
   const extensions = [
     ...sharedExtensions,
+    ...slashExts,
     // Syntax highlight style — matches the hljs preview palette exactly.
     // Prec.highest overrides the bundled highlight style from oneDark.
     Prec.highest(syntaxHighlighting(theme === "dark" ? darkHighlightStyle : lightHighlightStyle)),
@@ -864,7 +1002,22 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
   return (
     // Outer div scrolls and fills the panel; inner div constrains/centers
     // the editor column when readableWidth is on.
-    <div className="h-full overflow-hidden">
+    <div className="h-full overflow-hidden" style={{ position: "relative" }}>
+      {/* Slash command menu — rendered via fixed positioning so it's never clipped */}
+      {slashMenuState && (
+        <SlashCommandMenu
+          commands={filteredSlashCommands}
+          selectedIdx={clampedSlashIdx}
+          coords={slashMenuState.coords}
+          onSelect={(cmd) => {
+            if (!internalViewRef.current) return;
+            applySlashCommand(internalViewRef.current, cmd, slashMenuState.from);
+            setSlashMenuState(null);
+            setSlashSelectedIdx(0);
+          }}
+          onHover={(idx) => setSlashSelectedIdx(idx)}
+        />
+      )}
       <div
         style={{
           height:      "100%",
@@ -877,6 +1030,7 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
           value={value}
           onChange={handleChange}
           onCreateEditor={(view) => {
+            internalViewRef.current = view;
             if (editorViewRef) editorViewRef.current = view;
           }}
           extensions={extensions}
