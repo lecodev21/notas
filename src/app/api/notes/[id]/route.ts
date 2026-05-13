@@ -72,6 +72,16 @@ export async function PATCH(request: Request, { params }: Params) {
     });
   });
 
+  // When moving to trash, delete tags that no longer have any active (non-trashed) note
+  if (rest.isTrashed === true) {
+    await prisma.tag.deleteMany({
+      where: {
+        userId: session.user.id,
+        noteTags: { none: { note: { isTrashed: false } } },
+      },
+    });
+  }
+
   return apiSuccess({ note });
 }
 
@@ -86,5 +96,11 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!existing) return apiError(404, "Nota no encontrada");
 
   await prisma.note.delete({ where: { id } });
+
+  // Delete tags that became orphaned after permanent deletion
+  await prisma.tag.deleteMany({
+    where: { userId: session.user.id, noteTags: { none: {} } },
+  });
+
   return apiSuccess({ success: true });
 }

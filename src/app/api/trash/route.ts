@@ -11,5 +11,10 @@ export async function DELETE() {
     where: { userId: session.user.id, isTrashed: true },
   });
 
+  // Delete tags that became orphaned after emptying trash
+  await prisma.tag.deleteMany({
+    where: { userId: session.user.id, noteTags: { none: {} } },
+  });
+
   return apiSuccess({ deleted: count });
 }

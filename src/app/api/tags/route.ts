@@ -9,7 +9,7 @@ export async function GET() {
 
   const tags = await prisma.tag.findMany({
     where: { userId: session.user.id },
-    include: { _count: { select: { noteTags: true } } },
+    include: { _count: { select: { noteTags: { where: { note: { isTrashed: false } } } } } },
     orderBy: { name: "asc" },
   });
 

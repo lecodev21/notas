@@ -66,7 +66,28 @@ interface NoteListProps {
   onSelectNote: (id: string) => void;
   onNewNote: () => void;
   onSearch: (q: string) => void;
-  onImport?: (files: FileList) => Promise<ImportResult | null>;
+  onImport?: (files: FileList | File[]) => Promise<ImportResult | null>;
+}
+
+// Reads a dropped FileSystemEntry recursively and returns File[] with webkitRelativePath set
+async function collectFolderFiles(entry: FileSystemEntry, basePath = ""): Promise<File[]> {
+  if (entry.isFile) {
+    const file = await new Promise<File>((r) => (entry as FileSystemFileEntry).file(r));
+    const path = basePath ? `${basePath}/${entry.name}` : entry.name;
+    Object.defineProperty(file, "webkitRelativePath", { value: path, configurable: true });
+    return [file];
+  }
+  const dir = entry as FileSystemDirectoryEntry;
+  const path = basePath ? `${basePath}/${entry.name}` : entry.name;
+  const reader = dir.createReader();
+  const all: FileSystemEntry[] = [];
+  while (true) {
+    const batch = await new Promise<FileSystemEntry[]>((r) => reader.readEntries(r));
+    if (batch.length === 0) break;
+    all.push(...batch);
+  }
+  const nested = await Promise.all(all.map((e) => collectFolderFiles(e, path)));
+  return nested.flat();
 }
 
 export function NoteList({
@@ -87,19 +108,13 @@ export function NoteList({
 
   // ── Import state ─────────────────────────────────────────────────────────
   const fileInputRef   = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const importMenuRef  = useRef<HTMLDivElement>(null);
-  const [importing,      setImporting]      = useState(false);
-  const [importTotal,    setImportTotal]    = useState(0);
-  const [importMenuOpen, setImportMenuOpen] = useState(false);
-  const [importResult,   setImportResult]   = useState<ImportResult | null>(null);
-
-  // webkitdirectory isn't in React's HTML types — set imperatively
-  useEffect(() => {
-    if (folderInputRef.current) {
-      folderInputRef.current.setAttribute("webkitdirectory", "");
-    }
-  }, []);
+  const [importing,        setImporting]        = useState(false);
+  const [importTotal,      setImportTotal]      = useState(0);
+  const [importMenuOpen,   setImportMenuOpen]   = useState(false);
+  const [importResult,     setImportResult]     = useState<ImportResult | null>(null);
+  const [folderModalOpen,  setFolderModalOpen]  = useState(false);
+  const [isDragOver,       setIsDragOver]       = useState(false);
 
   // Close import menu on outside click
   useEffect(() => {
@@ -126,6 +141,31 @@ export function NoteList({
       setImporting(false);
       setImportTotal(0);
       e.target.value = "";
+    }
+  }
+
+  async function handleFolderDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!onImport) return;
+    const items = Array.from(e.dataTransfer.items);
+    const entries = items
+      .map((item) => item.webkitGetAsEntry())
+      .filter(Boolean) as FileSystemEntry[];
+    const files = (await Promise.all(entries.map((en) => collectFolderFiles(en)))).flat();
+    if (files.length === 0) return;
+    const mdCount = files.filter(
+      (f) => f.name.toLowerCase().endsWith(".md") && !f.name.startsWith(".")
+    ).length;
+    setImportTotal(mdCount);
+    setImporting(true);
+    setFolderModalOpen(false);
+    try {
+      const result = await onImport(files);
+      if (result) setImportResult(result);
+    } finally {
+      setImporting(false);
+      setImportTotal(0);
     }
   }
 
@@ -204,18 +244,11 @@ export function NoteList({
               )
             ) : (
               <>
-                {/* Hidden inputs */}
+                {/* Hidden input for individual .md files */}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".md,text/markdown"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                <input
-                  ref={folderInputRef}
-                  type="file"
                   multiple
                   className="hidden"
                   onChange={handleFileChange}
@@ -285,7 +318,7 @@ export function NoteList({
                           onMouseLeave={(e) =>
                             ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "")
                           }
-                          onClick={() => { folderInputRef.current?.click(); setImportMenuOpen(false); }}
+                          onClick={() => { setFolderModalOpen(true); setImportMenuOpen(false); }}
                         >
                           <span>📁</span><span>Importar notebook</span>
                         </button>
@@ -381,6 +414,35 @@ export function NoteList({
           {notes.length} nota{notes.length !== 1 ? "s" : ""}
         </p>
       </div>
+
+      {/* ── Import folder modal ── */}
+      <Modal
+        open={folderModalOpen}
+        onClose={() => setFolderModalOpen(false)}
+        title="Importar notebook"
+      >
+        <div
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleFolderDrop}
+          className="rounded-xl flex flex-col items-center justify-center gap-3 py-10 px-6 transition-colors cursor-default"
+          style={{
+            border: `2px dashed ${isDragOver ? "var(--color-accent)" : "var(--app-border-strong)"}`,
+            backgroundColor: isDragOver ? "rgba(99,102,241,0.06)" : "transparent",
+          }}
+        >
+          <span className="text-4xl select-none">📁</span>
+          <p className="text-sm font-medium text-center" style={{ color: "var(--app-text-primary)" }}>
+            Arrastra tu carpeta aquí
+          </p>
+          <p className="text-xs text-center" style={{ color: "var(--app-text-muted)" }}>
+            Suelta una carpeta para importar todos sus archivos .md
+          </p>
+        </div>
+        <p className="text-[11px] mt-3 text-center" style={{ color: "var(--app-text-faint)" }}>
+          Compatible con vaults de Obsidian y carpetas con archivos .md
+        </p>
+      </Modal>
 
       {/* ── Import result modal ── */}
       <Modal
@@ -549,22 +611,37 @@ function SortMenu({
   onChange: (key: SortKey) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      if (
+        !btnRef.current?.contains(e.target as Node) &&
+        !dropRef.current?.contains(e.target as Node)
+      ) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  function handleToggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const dropW = 208; // w-52
+      const left = Math.min(r.left, window.innerWidth - dropW - 8);
+      setPos({ top: r.bottom + 4, left });
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div className="relative" ref={ref}>
+    <div>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={handleToggle}
         title="Ordenar notas"
         className="flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-colors"
         style={{ color: open ? "var(--app-text-primary)" : "var(--app-text-muted)" }}
@@ -579,7 +656,6 @@ function SortMenu({
             : "var(--app-text-muted)";
         }}
       >
-        {/* Sort icon */}
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
             d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
@@ -588,8 +664,11 @@ function SortMenu({
 
       {open && (
         <div
-          className="absolute right-0 top-7 z-30 rounded-lg shadow-xl py-1 w-52"
+          ref={dropRef}
+          className="fixed z-50 rounded-lg shadow-xl py-1 w-52"
           style={{
+            top: pos.top,
+            left: pos.left,
             backgroundColor: "var(--app-bg-menu)",
             border: "1px solid var(--app-border-strong)",
           }}
