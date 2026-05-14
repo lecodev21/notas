@@ -50,6 +50,8 @@ model Note {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
+  shareToken String?   @unique                // null = private; set = public share link active
+
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   notebook   Notebook? @relation(fields: [notebookId], references: [id], onDelete: SetNull)
   noteTags   NoteTag[]

@@ -16,6 +16,10 @@ import { Modal } from "@/components/ui/Modal";
 import { CopyContextMenu } from "@/components/ui/CopyContextMenu";
 import { exportAsMarkdown, exportAsHtml, exportAsPdf } from "@/lib/exportNote";
 import { useBacklinks } from "@/hooks/useBacklinks";
+import { ShareModal } from "@/components/share/ShareModal";
+import { OutlineView } from "@/components/editor/OutlineView";
+import { parseHeadings, type OutlineItem } from "@/lib/outline";
+import { EditorView as CMEditorView } from "@codemirror/view";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -69,6 +73,7 @@ export function EditorPanel({
   const [writingMode, setWritingMode] = useState<WritingMode>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmTrashOpen,  setConfirmTrashOpen]  = useState(false);
+  const [shareModalOpen,    setShareModalOpen]    = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number; y: number; selectedText: string;
   } | null>(null);
@@ -251,6 +256,113 @@ export function EditorPanel({
   const { backlinks } = useBacklinks(note?.id ?? null, note?.title ?? null);
   const [backlinksOpen, setBacklinksOpen] = useState(true);
 
+  // ── Outline headings ─────────────────────────────────────────────────────
+  const headings = useMemo(() => parseHeadings(localBody), [localBody]);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+
+  // Track active heading from preview-panel scroll position (preview / split)
+  useEffect(() => {
+    const panel = previewPanelRef.current;
+    if (!panel || (mode !== "preview" && mode !== "split")) return;
+
+    function updateActive() {
+      if (!panel) return;
+      const panelTop = panel.getBoundingClientRect().top;
+      const els = Array.from(
+        panel.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")
+      );
+      if (els.length === 0) { setActiveHeadingId(null); return; }
+      const threshold = panelTop + panel.clientHeight * 0.4;
+      let active: HTMLElement | null = null;
+      for (const el of els) {
+        if (el.getBoundingClientRect().top <= threshold) active = el;
+        else break;
+      }
+      setActiveHeadingId((active ?? els[0]).id ?? null);
+    }
+
+    panel.addEventListener("scroll", updateActive, { passive: true });
+    updateActive();
+    return () => panel.removeEventListener("scroll", updateActive);
+  }, [mode, note?.id, headings]);
+
+  // Track active heading from CodeMirror scroll position (edit mode)
+  useEffect(() => {
+    if (mode !== "edit" || headings.length === 0) return;
+
+    // Poll until .cm-scroller appears (CodeMirror is dynamically imported)
+    let scroller: HTMLElement | null = null;
+
+    function updateActiveFromEditor() {
+      if (!scroller) return;
+      const view = editorViewRef.current;
+      if (!view) return;
+      // Which document position is at the top of the visible area?
+      const scrollTop = scroller.scrollTop;
+      const block = view.lineBlockAtHeight(scrollTop + 40);
+      // Find the last heading whose line starts at or before this position
+      let activeItem = headings[0];
+      for (const h of headings) {
+        const lineStart = view.state.doc.line(h.lineIndex + 1).from;
+        if (lineStart <= block.from) activeItem = h;
+        else break;
+      }
+      setActiveHeadingId(activeItem.id);
+    }
+
+    const poll = setInterval(() => {
+      const ep = editorPanelRef.current;
+      if (!ep) return;
+      const s = ep.querySelector<HTMLElement>(".cm-scroller");
+      if (!s) return;
+      clearInterval(poll);
+      scroller = s;
+      s.addEventListener("scroll", updateActiveFromEditor, { passive: true });
+      updateActiveFromEditor();
+    }, 50);
+
+    return () => {
+      clearInterval(poll);
+      if (scroller) scroller.removeEventListener("scroll", updateActiveFromEditor);
+    };
+  }, [mode, note?.id, headings]);
+
+  // Forward wheel events from OutlineView to the underlying scrollable panel
+  const handleOutlineWheel = useCallback((e: React.WheelEvent) => {
+    if (mode === "edit") {
+      const scroller = editorPanelRef.current?.querySelector<HTMLElement>(".cm-scroller");
+      scroller?.scrollBy({ top: e.deltaY, left: e.deltaX });
+    } else {
+      previewPanelRef.current?.scrollBy({ top: e.deltaY, left: e.deltaX });
+    }
+  }, [mode]);
+
+  // Scroll handler called when user clicks a heading in OutlineView
+  const handleScrollToHeading = useCallback((item: OutlineItem) => {
+    if (mode === "preview" || mode === "split") {
+      const panel = previewPanelRef.current;
+      if (!panel) return;
+      const el = panel.querySelector<HTMLElement>(`#${CSS.escape(item.id)}`);
+      if (el) {
+        panel.scrollTo({ top: el.offsetTop - 16, behavior: "smooth" });
+        setActiveHeadingId(item.id);
+      }
+    } else {
+      // Edit mode: scroll CodeMirror to the heading line and update active
+      const view = editorViewRef.current;
+      if (!view) return;
+      const lines = localBody.split("\n");
+      let pos = 0;
+      for (let i = 0; i < item.lineIndex && i < lines.length; i++) {
+        pos += lines[i].length + 1;
+      }
+      view.dispatch({
+        effects: CMEditorView.scrollIntoView(pos, { y: "start", yMargin: 16 }),
+      });
+      setActiveHeadingId(item.id);
+    }
+  }, [mode, localBody]);
+
   // ── Word-count stats ─────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const words = localBody.trim() === "" ? 0 : localBody.trim().split(/\s+/).length;
@@ -411,6 +523,22 @@ export function EditorPanel({
             </>
           ) : (
             <>
+              {/* Share button */}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShareModalOpen(true)}
+                title="Compartir nota"
+                className="text-xs gap-1 px-2"
+                style={{ color: note.shareToken ? "#818cf8" : undefined }}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                {note.shareToken ? "Compartida" : "Compartir"}
+              </Button>
+
               {onTogglePin && (
                 <Button
                   size="icon"
@@ -492,7 +620,7 @@ export function EditorPanel({
       {mode !== "preview" && <MarkdownToolbar editorViewRef={editorViewRef} />}
 
       {/* Editor / Preview */}
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex relative">
         {(mode === "edit" || mode === "split") && (
           <div
             ref={editorPanelRef}
@@ -579,6 +707,14 @@ export function EditorPanel({
             </div>
           </div>
         )}
+
+        {/* Outline — absolutely positioned on the right edge of the content area */}
+        <OutlineView
+          headings={headings}
+          activeId={activeHeadingId}
+          onClickHeading={handleScrollToHeading}
+          onWheel={handleOutlineWheel}
+        />
       </div>
 
       {/* Backlinks panel — shown below editor/preview when there are backlinks */}
@@ -746,6 +882,17 @@ export function EditorPanel({
           </div>
         </div>
       </Modal>
+
+      {/* Share modal */}
+      {shareModalOpen && (
+        <ShareModal
+          noteId={note.id}
+          noteTitle={localTitle}
+          initialToken={note.shareToken ?? null}
+          open={shareModalOpen}
+          onClose={() => setShareModalOpen(false)}
+        />
+      )}
 
       {/* Word-count status bar */}
       <div
