@@ -7,7 +7,6 @@ import type { Notebook, Tag } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
 import { useState } from "react";
-import Link from "next/link";
 import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 
 type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[]; _count?: { notes: number } };
@@ -30,6 +29,8 @@ interface SidebarProps {
   onRenameNotebook?: (id: string, name: string) => void;
   onDeleteNotebook?: (id: string) => void;
   onDropNote?: (noteId: string, notebookId: string) => void;
+  graphMode?: boolean;
+  onToggleGraphMode?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -55,6 +56,8 @@ export function Sidebar({
   onRenameNotebook,
   onDeleteNotebook,
   onDropNote,
+  graphMode = false,
+  onToggleGraphMode,
 }: SidebarProps) {
   const { data: session } = useSession();
   const { theme, toggleTheme } = useTheme();
@@ -125,7 +128,7 @@ export function Sidebar({
         {/* Graph */}
         <ul className="space-y-0.5">
           <li>
-            <GraphNavItem />
+            <GraphNavItem active={graphMode} onToggle={onToggleGraphMode} />
           </li>
         </ul>
 
@@ -344,23 +347,32 @@ export function Sidebar({
   );
 }
 
-function GraphNavItem() {
+function GraphNavItem({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle?: () => void;
+}) {
   const [hovered, setHovered] = useState(false);
   return (
-    <Link
-      href="/graph"
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors"
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors"
       style={{
-        backgroundColor: hovered ? "var(--app-hover)" : undefined,
-        color: "var(--app-text-muted)",
-        textDecoration: "none",
+        backgroundColor: active
+          ? "rgba(99,102,241,0.15)"
+          : hovered
+          ? "var(--app-hover)"
+          : undefined,
+        color: active ? "#818cf8" : "var(--app-text-secondary)",
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <span>🕸</span>
-      <span style={{ color: "var(--app-text-secondary)" }}>Grafo de notas</span>
-    </Link>
+      <span>Grafo de notas</span>
+    </button>
   );
 }
 

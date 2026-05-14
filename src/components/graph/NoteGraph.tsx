@@ -25,6 +25,10 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
   const animFrameRef = useRef<number>(0);
   const stoppedRef = useRef(false);
   const clickCandidateRef = useRef<string | null>(null);
+  // Mirrors draggingId state so the tick loop (inside useEffect) can read it
+  const draggingIdRef = useRef<string | null>(null);
+  // Lets handlers outside the useEffect restart the simulation
+  const restartSimRef = useRef<(() => void) | null>(null);
 
   // Initialize simulation nodes
   useEffect(() => {
@@ -49,6 +53,8 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
     function tick() {
       const ns = simNodesRef.current;
       if (ns.length === 0) return;
+
+      const pinnedId = draggingIdRef.current;
 
       // Build index map for quick lookup
       const idxMap = new Map<string, number>();
@@ -89,8 +95,16 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
       }
 
       // Center gravity + damping + position update
+      // Skip velocity/position for the pinned (dragged) node so the sim
+      // doesn't fight the cursor position set by handleMouseMove.
       let maxV = 0;
       for (const n of ns) {
+        if (n.id === pinnedId) {
+          // Keep the dragged node exactly where the mouse put it
+          n.vx = 0;
+          n.vy = 0;
+          continue;
+        }
         n.vx += -n.x * 0.008;
         n.vy += -n.y * 0.008;
         n.vx *= 0.85;
@@ -103,18 +117,29 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
 
       setSimNodes([...ns]);
 
-      if (maxV > 0.001 && !stoppedRef.current) {
+      // Keep running while dragging (so neighbours react) or while nodes move
+      const keepGoing = pinnedId !== null || maxV > 0.001;
+      if (keepGoing && !stoppedRef.current) {
         animFrameRef.current = requestAnimationFrame(tick);
-      } else {
+      } else if (!keepGoing) {
         stoppedRef.current = true;
       }
     }
+
+    // Expose restart so handlers can kick the loop back alive
+    restartSimRef.current = () => {
+      if (stoppedRef.current) {
+        stoppedRef.current = false;
+        animFrameRef.current = requestAnimationFrame(tick);
+      }
+    };
 
     animFrameRef.current = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(animFrameRef.current);
       stoppedRef.current = true;
+      restartSimRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges]);
@@ -143,6 +168,8 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
     if (draggingId) {
       const dx = (e.clientX - dragStart.current.x) / zoom;
       const dy = (e.clientY - dragStart.current.y) / zoom;
+      // Mouse actually moved → this is a drag, cancel the pending click
+      if (dx !== 0 || dy !== 0) clickCandidateRef.current = null;
       dragStart.current = { x: e.clientX, y: e.clientY };
       const ns = simNodesRef.current;
       const node = ns.find((n) => n.id === draggingId);
@@ -151,7 +178,8 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
         node.y += dy;
         node.vx = 0;
         node.vy = 0;
-        setSimNodes([...ns]);
+        // Kick the simulation so neighbours react to the new position
+        restartSimRef.current?.();
       }
     }
   }, [isPanning, draggingId, zoom]);
@@ -159,14 +187,18 @@ export function NoteGraph({ nodes, edges, onSelectNote }: NoteGraphProps) {
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
     setDraggingId(null);
+    draggingIdRef.current = null;
+    // Let nodes settle now that the dragged node is released
+    restartSimRef.current?.();
   }, []);
 
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setDraggingId(id);
+    draggingIdRef.current = id;
     dragStart.current = { x: e.clientX, y: e.clientY };
     clickCandidateRef.current = id;
-    stoppedRef.current = true; // pause simulation during drag
+    // Do NOT stop the simulation — neighbours should react while dragging
   }, []);
 
   const handleNodeClick = useCallback((e: React.MouseEvent, id: string) => {

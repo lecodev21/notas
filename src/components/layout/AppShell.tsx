@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentType } from "react";
 
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
@@ -10,6 +10,7 @@ import { STATUS_META as STATUS_META_MAP, type NoteStatus } from "@/lib/noteStatu
 import { useNotebooks, useCreateNotebook, useUpdateNotebook, useDeleteNotebook } from "@/hooks/useNotebooks";
 import { useTags, useCreateTag, useDeleteTag } from "@/hooks/useTags";
 import { useSearch } from "@/hooks/useSearch";
+import { useGraph, type GraphNode, type GraphEdge } from "@/hooks/useGraph";
 import { parseFrontmatter } from "@/lib/parseFrontmatter";
 import { extractObsidianTags } from "@/lib/extractObsidianTags";
 
@@ -39,6 +40,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const [exitingNoteId, setExitingNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [graphMode, setGraphMode] = useState(false);
 
 
   // Data hooks
@@ -49,6 +51,8 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const { note: selectedNote, loading: noteLoading } = useNotes({ id: selectedNoteId });
   // All notes (all statuses, non-trashed) — used for wiki link autocomplete and navigation
   const { notes: allNotes } = useNotes({ allStatuses: true });
+  // Graph data — only fetched when graph mode is active
+  const { nodes: graphNodes, edges: graphEdges } = useGraph();
   const { notebooks } = useNotebooks();
   const { tags, mutateTags } = useTags();
 
@@ -449,6 +453,8 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             onRenameNotebook={handleRenameNotebook}
             onDeleteNotebook={handleDeleteNotebook}
             onDropNote={handleMoveNote}
+            graphMode={graphMode}
+            onToggleGraphMode={() => setGraphMode((v) => !v)}
           />
         </div>
       </div>
@@ -474,33 +480,106 @@ export function AppShell({ initialNoteId }: AppShellProps) {
         </div>
       </div>
 
-      {/* Panel 3: Editor — always visible, expands to full width in focus mode */}
-      <div className="flex-1 min-w-0">
-        <EditorPanel
-          note={activeNote ?? null}
-          loading={noteLoading && !!selectedNoteId}
-          availableTags={tags}
-          focusMode={focusMode}
-          onToggleFocusMode={() => setFocusMode((v) => !v)}
-          onUpdate={handleUpdate}
-          onCreateTag={async (name) => {
-            const TAG_PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16"];
-            const color = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
-            return createTag({ name, color });
-          }}
-          onTogglePin={handleTogglePin}
-          onTrash={handleTrash}
-          onRestore={handleRestore}
-          onDeletePermanent={handleDeletePermanent}
-          availableNotes={allNotes.map((n) => ({ id: n.id, title: n.title }))}
-          onNavigateToNote={handleSelectNote}
-          onCreateAndNavigate={async (title) => {
-            const note = await createNote({ title, notebookId: selectedNotebook ?? undefined });
-            if (note) handleSelectNote(note.id);
-          }}
-        />
+      {/* Panel 3: Editor or Graph — expands to full width in focus mode */}
+      <div className="flex-1 min-w-0 overflow-hidden">
+        {graphMode ? (
+          <GraphPanel
+            nodes={graphNodes}
+            edges={graphEdges}
+            onSelectNote={(id) => {
+              handleSelectNote(id);
+              setGraphMode(false);
+            }}
+          />
+        ) : (
+          <EditorPanel
+            note={activeNote ?? null}
+            loading={noteLoading && !!selectedNoteId}
+            availableTags={tags}
+            focusMode={focusMode}
+            onToggleFocusMode={() => setFocusMode((v) => !v)}
+            onUpdate={handleUpdate}
+            onCreateTag={async (name) => {
+              const TAG_PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16"];
+              const color = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
+              return createTag({ name, color });
+            }}
+            onTogglePin={handleTogglePin}
+            onTrash={handleTrash}
+            onRestore={handleRestore}
+            onDeletePermanent={handleDeletePermanent}
+            availableNotes={allNotes.map((n) => ({ id: n.id, title: n.title }))}
+            onNavigateToNote={handleSelectNote}
+            onCreateAndNavigate={async (title) => {
+              const note = await createNote({ title, notebookId: selectedNotebook ?? undefined });
+              if (note) handleSelectNote(note.id);
+            }}
+          />
+        )}
       </div>
 
+    </div>
+  );
+}
+
+// ── Graph panel ────────────────────────────────────────────────────────────
+type NoteGraphComponent = ComponentType<{
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  onSelectNote: (id: string) => void;
+}>;
+
+function GraphPanel({
+  nodes,
+  edges,
+  onSelectNote,
+}: {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  onSelectNote: (id: string) => void;
+}) {
+  const [NoteGraph, setNoteGraph] = useState<NoteGraphComponent | null>(null);
+
+  useEffect(() => {
+    import("@/components/graph/NoteGraph").then((mod) => {
+      setNoteGraph(() => mod.NoteGraph);
+    });
+  }, []);
+
+  return (
+    <div
+      className="flex flex-col h-full theme-transition"
+      style={{ backgroundColor: "var(--app-bg-editor)" }}
+    >
+      {/* Header */}
+      <div
+        className="shrink-0 flex items-center gap-2 px-4 py-2"
+        style={{ borderBottom: "1px solid var(--app-border)" }}
+      >
+        <span className="text-sm" style={{ color: "var(--app-text-muted)" }}>🕸</span>
+        <span className="text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>
+          Grafo de notas
+        </span>
+        <span className="text-xs ml-2" style={{ color: "var(--app-text-faint)" }}>
+          {nodes.length} notas · {edges.length} conexiones
+        </span>
+        <span className="text-xs ml-auto" style={{ color: "var(--app-text-faint)" }}>
+          Scroll para zoom · Arrastra para mover · Click en nodo para abrir
+        </span>
+      </div>
+
+      {/* Graph canvas — relative+absolute so the SVG always gets a definite size */}
+      <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        <div className="absolute inset-0">
+          {NoteGraph ? (
+            <NoteGraph nodes={nodes} edges={edges} onSelectNote={onSelectNote} />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <span className="text-sm" style={{ color: "var(--app-text-faint)" }}>Cargando grafo…</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
