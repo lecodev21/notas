@@ -6,6 +6,7 @@ import hljs from "highlight.js";
 import { Children, cloneElement, isValidElement, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTheme } from "@/lib/theme";
+import { slugify } from "@/lib/outline";
 
 // ── Language alias map ─────────────────────────────────────────────────────
 // Maps common shorthands to the name highlight.js registers the language under.
@@ -350,6 +351,23 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       }
       return <a href={href}>{children}</a>;
     },
+    // ── Headings with IDs (for outline scroll targets) ──────────────────────
+    // Each heading receives an id derived from its text so OutlineView can
+    // scroll to it.  The slugify function is shared with parseHeadings so the
+    // IDs always match — deduplication is handled by MarkdownPreview by
+    // tracking a per-render seen map via ref.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h1: ({ children }: any) => <h1 id={slugify(String(children))}>{children}</h1>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h2: ({ children }: any) => <h2 id={slugify(String(children))}>{children}</h2>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h3: ({ children }: any) => <h3 id={slugify(String(children))}>{children}</h3>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h4: ({ children }: any) => <h4 id={slugify(String(children))}>{children}</h4>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h5: ({ children }: any) => <h5 id={slugify(String(children))}>{children}</h5>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h6: ({ children }: any) => <h6 id={slugify(String(children))}>{children}</h6>,
     } as {
       input:  React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -370,6 +388,12 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       pre:    React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       a:      React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      h1: React.ComponentType<any>; h2: React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      h3: React.ComponentType<any>; h4: React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      h5: React.ComponentType<any>; h6: React.ComponentType<any>;
     };
   });
 
