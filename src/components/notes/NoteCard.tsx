@@ -28,14 +28,22 @@ type NoteWithTags = Note & {
   notebook?: { id: string; name: string } | null;
 };
 
+export interface BulkDragData {
+  ids:    string[];
+  titles: string[];
+}
+
 interface NoteCardProps {
   note: NoteWithTags;
   isActive?: boolean;
   isExiting?: boolean;
-  onClick?: () => void;
+  isSelected?: boolean;
+  /** When set and this note is part of a multi-selection, drag carries all IDs */
+  bulkDragData?: BulkDragData;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
-export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) {
+export function NoteCard({ note, isActive, isExiting, isSelected, bulkDragData, onClick }: NoteCardProps) {
   const excerpt    = getExcerpt(note.body);
   const tasks      = parseTasks(note.body);
   const [dragging, setDragging] = useState(false);
@@ -43,37 +51,93 @@ export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) 
 
   return (
     <>
+    <div className="relative">
     <button
       onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       draggable
       onClick={onClick}
       onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", note.id);
+        const isBulk = bulkDragData && bulkDragData.ids.length > 1;
+        if (isBulk) {
+          // Encode all selected IDs with a "bulk:" prefix so the drop target
+          // can distinguish a bulk drag from a single-note drag.
+          e.dataTransfer.setData("text/plain", "bulk:" + bulkDragData.ids.join(","));
+
+          // ── Custom drag ghost ────────────────────────────────────────────
+          const ghost = document.createElement("div");
+          ghost.style.cssText = [
+            "position:fixed",
+            "top:-9999px",
+            "left:-9999px",
+            "padding:8px 12px",
+            "border-radius:8px",
+            "max-width:240px",
+            "min-width:160px",
+            "display:flex",
+            "flex-direction:column",
+            "gap:3px",
+            "font-family:inherit",
+            "background:var(--app-bg-surface,#1e1e2e)",
+            "border:1px solid rgba(99,102,241,0.45)",
+            "box-shadow:0 8px 24px rgba(0,0,0,0.45)",
+            "pointer-events:none",
+          ].join(";");
+
+          // Count badge
+          const badge = document.createElement("div");
+          badge.style.cssText = "font-size:11px;font-weight:600;color:#818cf8;margin-bottom:2px";
+          badge.textContent = `${bulkDragData.ids.length} notas`;
+          ghost.appendChild(badge);
+
+          // Show up to 3 titles
+          const shown = bulkDragData.titles.slice(0, 3);
+          for (const title of shown) {
+            const row = document.createElement("div");
+            row.style.cssText = "font-size:12px;color:var(--app-text-primary,#cdd6f4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+            row.textContent = "📝 " + (title || "Sin título");
+            ghost.appendChild(row);
+          }
+          if (bulkDragData.titles.length > 3) {
+            const more = document.createElement("div");
+            more.style.cssText = "font-size:11px;color:var(--app-text-muted,#7f849c);margin-top:1px";
+            more.textContent = `+ ${bulkDragData.titles.length - 3} más`;
+            ghost.appendChild(more);
+          }
+
+          document.body.appendChild(ghost);
+          e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 20);
+          requestAnimationFrame(() => {
+            document.body.removeChild(ghost);
+            setDragging(true);
+          });
+        } else {
+          e.dataTransfer.setData("text/plain", note.id);
+          // Small delay so the ghost image captures the card before opacity drops
+          requestAnimationFrame(() => setDragging(true));
+        }
         e.dataTransfer.effectAllowed = "move";
-        // Small delay so the ghost image captures the card before opacity drops
-        requestAnimationFrame(() => setDragging(true));
       }}
       onDragEnd={() => setDragging(false)}
       className={cn(
         "w-full text-left px-3 py-3 rounded-lg cursor-default group",
-        isActive ? "border" : "border border-transparent",
+        (isActive || isSelected) ? "border" : "border border-transparent",
         dragging  && "opacity-40 scale-95",
         isExiting && "opacity-0 translate-x-3 pointer-events-none",
       )}
       style={{
-        backgroundColor: isActive ? "rgba(99,102,241,0.12)" : undefined,
-        borderColor:     isActive ? "rgba(99,102,241,0.3)" : "transparent",
+        backgroundColor: (isActive || isSelected) ? "rgba(99,102,241,0.12)" : undefined,
+        borderColor:     (isActive || isSelected) ? "rgba(99,102,241,0.3)"  : "transparent",
         transition: isExiting
           ? "opacity 240ms ease, transform 240ms ease"
           : "opacity 120ms, transform 120ms, background-color 150ms",
       }}
       onMouseEnter={(e) => {
-        if (!isActive)
+        if (!isActive && !isSelected)
           (e.currentTarget as HTMLButtonElement).style.backgroundColor =
             "var(--app-hover)";
       }}
       onMouseLeave={(e) => {
-        if (!isActive)
+        if (!isActive && !isSelected)
           (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
       }}
     >
@@ -83,14 +147,18 @@ export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) 
           style={{ color: "var(--app-text-primary)" }}
         >
           {/* Status icon — always visible except in trash */}
-          {!note.isTrashed && note.status && (
-            <span
-              className="text-[11px] leading-none shrink-0"
-              title={STATUS_META[note.status as NoteStatus]?.label}
-            >
-              {STATUS_META[note.status as NoteStatus]?.icon}
-            </span>
-          )}
+          {!note.isTrashed && note.status && (() => {
+            const meta = STATUS_META[note.status as NoteStatus];
+            return meta ? (
+              <span
+                className="text-[10px] leading-none shrink-0 font-bold"
+                title={meta.label}
+                style={{ color: meta.color }}
+              >
+                {meta.icon}
+              </span>
+            ) : null;
+          })()}
           {note.isPinned && (
             <span className="text-indigo-400 shrink-0" aria-label="Pinned">📌</span>
           )}
@@ -186,6 +254,7 @@ export function NoteCard({ note, isActive, isExiting, onClick }: NoteCardProps) 
         );
       })()}
     </button>
+    </div>
 
     {ctxMenu && (
       <CopyContextMenu

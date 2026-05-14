@@ -5,7 +5,7 @@ import { useState, useEffect, type ComponentType } from "react";
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
 import { EditorPanel } from "./EditorPanel";
-import { useNotes, useCreateNote, useUpdateNote, useDeleteNote, useStatusCounts } from "@/hooks/useNotes";
+import { useNotes, useCreateNote, useUpdateNote, useDeleteNote, useStatusCounts, useBulkNotes } from "@/hooks/useNotes";
 import { STATUS_META as STATUS_META_MAP, type NoteStatus } from "@/lib/noteStatus";
 import { useNotebooks, useCreateNotebook, useUpdateNotebook, useDeleteNotebook } from "@/hooks/useNotebooks";
 import { useTags, useCreateTag, useDeleteTag } from "@/hooks/useTags";
@@ -64,6 +64,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const { deleteTag } = useDeleteTag();
   const { updateNote } = useUpdateNote();
   const { deleteNote } = useDeleteNote();
+  const { bulkUpdate } = useBulkNotes();
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -126,6 +127,10 @@ export function AppShell({ initialNoteId }: AppShellProps) {
       await updateNote(noteId, { notebookId });
       setExitingNoteId(null);
     }, 260); // matches NoteCard transition duration
+  }
+
+  async function handleBulkMoveNotes(noteIds: string[], notebookId: string) {
+    await bulkUpdate(noteIds, { action: "move", notebookId });
   }
 
   async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) {
@@ -453,6 +458,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             onRenameNotebook={handleRenameNotebook}
             onDeleteNotebook={handleDeleteNotebook}
             onDropNote={handleMoveNote}
+            onDropNotes={handleBulkMoveNotes}
             graphMode={graphMode}
             onToggleGraphMode={() => setGraphMode((v) => !v)}
           />
@@ -472,6 +478,8 @@ export function AppShell({ initialNoteId }: AppShellProps) {
             exitingNoteId={exitingNoteId}
             contextLabel={searchQuery ? `Resultados: "${searchQuery}"` : contextLabel}
             isTrashView={view === "trash"}
+            notebooks={notebooks}
+            tags={tags}
             onSelectNote={handleSelectNote}
             onNewNote={handleNewNote}
             onSearch={setSearchQuery}

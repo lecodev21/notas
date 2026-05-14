@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { NoteCard } from "@/components/notes/NoteCard";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NoteCard, type BulkDragData } from "@/components/notes/NoteCard";
+import { BulkActionBar } from "@/components/notes/BulkActionBar";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -63,6 +64,8 @@ interface NoteListProps {
   exitingNoteId?: string | null;
   contextLabel?: string;
   isTrashView?: boolean;
+  notebooks?: { id: string; name: string; parentId: string | null }[];
+  tags?: Tag[];
   onSelectNote: (id: string) => void;
   onNewNote: () => void;
   onSearch: (q: string) => void;
@@ -97,6 +100,8 @@ export function NoteList({
   exitingNoteId,
   contextLabel = "Todas las notas",
   isTrashView = false,
+  notebooks = [],
+  tags = [],
   onSelectNote,
   onNewNote,
   onSearch,
@@ -175,6 +180,18 @@ export function NoteList({
     setEmptyingTrash(false);
     setConfirmOpen(false);
   }
+  // ── Multi-select state ───────────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastClickedIdxRef = useRef<number | null>(null);
+
+  // Clear selection whenever the notes list changes context
+  useEffect(() => { setSelectedIds(new Set()); lastClickedIdxRef.current = null; }, [contextLabel]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    lastClickedIdxRef.current = null;
+  }, []);
+
   const [searchValue, setSearchValue] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -195,6 +212,61 @@ export function NoteList({
     setSearchValue(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => onSearch(value), 300);
+  }
+
+  // ── Bulk drag data — shared by every selected NoteCard ──────────────────
+  const bulkDragData = useMemo<BulkDragData | undefined>(() => {
+    if (selectedIds.size < 2) return undefined;
+    const selected = sortedNotes.filter((n) => selectedIds.has(n.id));
+    return {
+      ids:    selected.map((n) => n.id),
+      titles: selected.map((n) => n.title),
+    };
+  }, [selectedIds, sortedNotes]);
+
+  // ── Selection click handling ─────────────────────────────────────────────
+
+  function handleCardClick(noteId: string, idx: number, e: React.MouseEvent) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+
+        // First Ctrl+click: seed the set with the currently open note so the
+        // user immediately has 2 notes selected and the action bar appears.
+        if (next.size === 0 && selectedNoteId && selectedNoteId !== noteId) {
+          next.add(selectedNoteId);
+        }
+
+        // Toggle the clicked note
+        if (next.has(noteId)) {
+          next.delete(noteId);
+          // If we're back to just the active note, collapse to empty
+          if (next.size === 1 && next.has(selectedNoteId ?? "")) next.clear();
+        } else {
+          next.add(noteId);
+        }
+
+        return next;
+      });
+      lastClickedIdxRef.current = idx;
+    } else if (e.shiftKey && lastClickedIdxRef.current !== null) {
+      // Shift: range select — also seed with active note on first use
+      e.preventDefault();
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.size === 0 && selectedNoteId) next.add(selectedNoteId);
+        const start = Math.min(lastClickedIdxRef.current!, idx);
+        const end   = Math.max(lastClickedIdxRef.current!, idx);
+        for (let i = start; i <= end; i++) next.add(sortedNotes[i].id);
+        return next;
+      });
+    } else {
+      // Normal click: navigate and clear any active selection
+      if (selectedIds.size > 0) clearSelection();
+      onSelectNote(noteId);
+      lastClickedIdxRef.current = idx;
+    }
   }
 
   return (
@@ -393,27 +465,39 @@ export function NoteList({
           </div>
         ) : (
           <div className="space-y-0.5">
-            {sortedNotes.map((note) => (
+            {sortedNotes.map((note, idx) => (
               <NoteCard
                 key={note.id}
                 note={note}
                 isActive={selectedNoteId === note.id}
                 isExiting={exitingNoteId === note.id}
-                onClick={() => onSelectNote(note.id)}
+                isSelected={selectedIds.has(note.id)}
+                bulkDragData={selectedIds.has(note.id) ? bulkDragData : undefined}
+                onClick={(e) => handleCardClick(note.id, idx, e)}
               />
             ))}
           </div>
         )}
       </div>
 
-      <div
-        className="px-3 py-2"
-        style={{ borderTop: "1px solid var(--app-border)" }}
-      >
-        <p className="text-[10px]" style={{ color: "var(--app-text-faint)" }}>
-          {notes.length} nota{notes.length !== 1 ? "s" : ""}
-        </p>
-      </div>
+      {selectedIds.size >= 2 ? (
+        <BulkActionBar
+          selectedIds={selectedIds}
+          notebooks={notebooks}
+          tags={tags}
+          onClear={clearSelection}
+          onDone={clearSelection}
+        />
+      ) : (
+        <div
+          className="px-3 py-2"
+          style={{ borderTop: "1px solid var(--app-border)" }}
+        >
+          <p className="text-[10px]" style={{ color: "var(--app-text-faint)" }}>
+            {notes.length} nota{notes.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+      )}
 
       {/* ── Import folder modal ── */}
       <Modal

@@ -16,6 +16,7 @@ interface NotebookTreeProps {
   onDelete?: (id: string) => void;
   onNewChild?: (parentId: string, name: string) => void;
   onDropNote?: (noteId: string, notebookId: string) => void;
+  onDropNotes?: (noteIds: string[], notebookId: string) => void;
   depth?: number;
 }
 
@@ -27,6 +28,7 @@ export function NotebookTree({
   onDelete,
   onNewChild,
   onDropNote,
+  onDropNotes,
   depth = 0,
 }: NotebookTreeProps) {
   return (
@@ -41,6 +43,7 @@ export function NotebookTree({
           onDelete={onDelete}
           onNewChild={onNewChild}
           onDropNote={onDropNote}
+          onDropNotes={onDropNotes}
           depth={depth}
         />
       ))}
@@ -56,6 +59,7 @@ function NotebookItem({
   onDelete,
   onNewChild,
   onDropNote,
+  onDropNotes,
   depth,
 }: {
   notebook: NotebookWithChildren;
@@ -65,6 +69,7 @@ function NotebookItem({
   onDelete?: (id: string) => void;
   onNewChild?: (parentId: string, name: string) => void;
   onDropNote?: (noteId: string, notebookId: string) => void;
+  onDropNotes?: (noteIds: string[], notebookId: string) => void;
   depth: number;
 }) {
   const hasChildren = (notebook.children?.length ?? 0) > 0;
@@ -151,8 +156,13 @@ function NotebookItem({
         }}
         onDrop={(e) => {
           e.preventDefault();
-          const noteId = e.dataTransfer.getData("text/plain");
-          if (noteId) onDropNote?.(noteId, notebook.id);
+          const data = e.dataTransfer.getData("text/plain");
+          if (data.startsWith("bulk:")) {
+            const ids = data.slice(5).split(",").filter(Boolean);
+            if (ids.length > 0) onDropNotes?.(ids, notebook.id);
+          } else if (data) {
+            onDropNote?.(data, notebook.id);
+          }
           setIsDragOver(false);
         }}
         onContextMenu={(e) => {
@@ -306,6 +316,7 @@ function NotebookItem({
           onDelete={onDelete}
           onNewChild={onNewChild}
           onDropNote={onDropNote}
+          onDropNotes={onDropNotes}
           depth={depth + 1}
         />
       )}

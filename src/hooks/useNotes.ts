@@ -175,6 +175,38 @@ export function useDeleteNote() {
   return { deleteNote };
 }
 
+type BulkAction =
+  | { action: "trash" }
+  | { action: "move";   notebookId: string | null }
+  | { action: "tag";    tagId: string; mode: "add" | "remove" }
+  | { action: "status"; status: NoteStatus };
+
+export function useBulkNotes() {
+  async function bulkUpdate(ids: string[], op: BulkAction): Promise<boolean> {
+    const res = await fetch("/api/notes/bulk", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ ids, ...op }),
+    });
+    if (!res.ok) return false;
+
+    // Revalidate all note lists + sidebar counts
+    await Promise.all([
+      globalMutate(
+        (key: unknown) => typeof key === "string" && key.startsWith("/api/notes?"),
+        undefined,
+        { revalidate: true },
+      ),
+      globalMutate("/api/notebooks"),
+      globalMutate("/api/status-counts"),
+      globalMutate("/api/tags"),
+    ]);
+    return true;
+  }
+
+  return { bulkUpdate };
+}
+
 export function useEmptyTrash() {
   async function emptyTrash() {
     const res = await fetch("/api/trash", { method: "DELETE" });

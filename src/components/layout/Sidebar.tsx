@@ -29,6 +29,7 @@ interface SidebarProps {
   onRenameNotebook?: (id: string, name: string) => void;
   onDeleteNotebook?: (id: string) => void;
   onDropNote?: (noteId: string, notebookId: string) => void;
+  onDropNotes?: (noteIds: string[], notebookId: string) => void;
   graphMode?: boolean;
   onToggleGraphMode?: () => void;
 }
@@ -56,6 +57,7 @@ export function Sidebar({
   onRenameNotebook,
   onDeleteNotebook,
   onDropNote,
+  onDropNotes,
   graphMode = false,
   onToggleGraphMode,
 }: SidebarProps) {
@@ -161,6 +163,7 @@ export function Sidebar({
               onDelete={onDeleteNotebook}
               onNewChild={onNewSubNotebook}
               onDropNote={onDropNote}
+              onDropNotes={onDropNotes}
             />
           )}
 
@@ -237,7 +240,7 @@ export function Sidebar({
                         (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
                     }}
                   >
-                    <span className="text-[13px] leading-none">{meta.icon}</span>
+                    <span className="text-[11px] leading-none font-bold" style={{ color: meta.color }}>{meta.icon}</span>
                     <span
                       className="truncate"
                       style={{ color: isActive ? "#6366f1" : "var(--app-text-secondary)" }}
