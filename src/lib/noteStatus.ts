@@ -12,10 +12,10 @@ export const STATUS_META: Record<
   NoteStatus,
   { label: string; icon: string; color: string }
 > = {
-  active:    { label: "Active",    icon: "🟢", color: "#22c55e" },
-  on_hold:   { label: "On Hold",   icon: "🟡", color: "#eab308" },
-  completed: { label: "Completed", icon: "✅", color: "#6366f1" },
-  dropped:   { label: "Dropped",   icon: "❌", color: "#6b7280" },
+  active:    { label: "Active",    icon: "●", color: "#34d399" },
+  on_hold:   { label: "On Hold",   icon: "◑", color: "#fbbf24" },
+  completed: { label: "Completed", icon: "✓", color: "#818cf8" },
+  dropped:   { label: "Dropped",   icon: "○", color: "#64748b" },
 };
 
 export const STATUS_ORDER: NoteStatus[] = [

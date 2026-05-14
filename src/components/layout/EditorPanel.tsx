@@ -93,6 +93,9 @@ export function EditorPanel({
   const editorViewRef = useRef<EditorView | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Ref that the toolbar uses to trigger image uploads (set by MarkdownEditor)
+  const onImageFileRef = useRef<((file: File) => void) | null>(null);
+
   // Auto-focus the title input whenever a brand-new (empty) note is loaded.
   // We detect "new note" by its default title and empty body so we never need
   // an external prop — the check is local and fires once per note id.
@@ -617,7 +620,7 @@ export function EditorPanel({
       <div className="shrink-0" style={{ borderBottom: "1px solid var(--app-border)" }} />
 
       {/* Markdown formatting toolbar — only in edit/split, not preview */}
-      {mode !== "preview" && <MarkdownToolbar editorViewRef={editorViewRef} />}
+      {mode !== "preview" && <MarkdownToolbar editorViewRef={editorViewRef} onImageFileRef={onImageFileRef} />}
 
       {/* Editor / Preview */}
       <div className="flex-1 overflow-hidden flex relative">
@@ -654,6 +657,7 @@ export function EditorPanel({
               readableWidth={readableWidth}
               writingMode={writingMode}
               availableNotes={availableNotes}
+              onImageFileRef={onImageFileRef}
               onChange={(v) => {
                 setLocalBody(v);
                 debouncedSave("body", v);
@@ -1042,7 +1046,7 @@ function StatusSelector({
         }}
         title="Cambiar estado"
       >
-        <span className="text-[11px] leading-none">{meta.icon}</span>
+        <span className="text-[10px] leading-none font-bold" style={{ color: meta.color }}>{meta.icon}</span>
         <span>{meta.label}</span>
         <svg className="w-2.5 h-2.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1079,7 +1083,7 @@ function StatusSelector({
                     (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
                 }}
               >
-                <span className="text-[13px] leading-none">{m.icon}</span>
+                <span className="text-[11px] leading-none font-bold" style={{ color: m.color }}>{m.icon}</span>
                 {m.label}
                 {isActive && (
                   <svg className="w-3 h-3 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
