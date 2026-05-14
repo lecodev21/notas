@@ -39,6 +39,8 @@ import {
   createWikiLinkExtension,
   type WikiLinkCallbacks,
 } from "./wikiLinkExtension";
+import { imagePreviewPlugin, imageTheme, createImageDropExtension } from "./imageExtension";
+import { uploadImageAndInsert } from "./imageUpload";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -66,6 +68,14 @@ export interface MarkdownEditorProps {
   writingMode?: WritingMode;
   /** Notes available for [[wiki link]] completion */
   availableNotes?: { id: string; title: string }[];
+  /**
+   * Called when the toolbar image button is clicked.  The parent should open
+   * a file picker and pass the selected File back to this callback so the
+   * editor can upload and insert it.
+   * We expose `onImageFile` here as a ref-based escape hatch so the toolbar
+   * (which only has editorViewRef) can trigger uploads without prop drilling.
+   */
+  onImageFileRef?: MutableRefObject<((file: File) => void) | null>;
 }
 
 // ── Heading size decorations ───────────────────────────────────────────────
@@ -1108,12 +1118,15 @@ function WikiLinkMenu({ notes, selectedIdx, coords, onSelect, onHover }: WikiLin
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
-export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode, availableNotes = [] }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, writingMode, availableNotes = [], onImageFileRef }: MarkdownEditorProps) {
   const { theme } = useTheme();
   const handleChange = useCallback((val: string) => onChange(val), [onChange]);
 
   // ── Internal view ref (needed to apply slash commands) ──────────────────
   const internalViewRef = useRef<EditorView | null>(null);
+
+  // ── Drag-over state (for visual overlay) ────────────────────────────────
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // ── Slash command menu state ─────────────────────────────────────────────
   const [slashMenuState, setSlashMenuState] = useState<{
@@ -1212,6 +1225,22 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const wikiExts = useMemo(() => createWikiLinkExtension(wikiCbRef), []);
 
+  // ── Image drop/paste extension ───────────────────────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const imageDropExt = useMemo(() => createImageDropExtension(setIsDragOver), []);
+
+  // Expose uploadImageAndInsert so the toolbar can trigger an upload
+  useEffect(() => {
+    if (!onImageFileRef) return;
+    onImageFileRef.current = (file: File) => {
+      const view = internalViewRef.current;
+      if (!view) return;
+      const pos = view.state.selection.main.from;
+      uploadImageAndInsert(file, view, pos);
+    };
+    return () => { if (onImageFileRef) onImageFileRef.current = null; };
+  }, [onImageFileRef]);
+
   const extensions = [
     ...sharedExtensions,
     ...slashExts,
@@ -1224,12 +1253,38 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
     ...(theme !== "dark" ? [lightTheme] : []),
     // Writing mode: typewriter-scroll + paragraph-dim together
     ...(writingMode === "focus" ? [typewriterExtension, ...paragraphFocusExtension] : []),
+    // Image inline preview + drag/paste
+    imagePreviewPlugin,
+    imageTheme,
+    imageDropExt,
   ];
 
   return (
     // Outer div scrolls and fills the panel; inner div constrains/centers
     // the editor column when readableWidth is on.
     <div className="h-full overflow-hidden" style={{ position: "relative" }}>
+      {/* Drop overlay — shown while a file is dragged over the editor */}
+      {isDragOver && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none"
+          style={{
+            backgroundColor: "rgba(99,102,241,0.08)",
+            border:          "2px dashed #6366f1",
+            borderRadius:    "6px",
+          }}
+        >
+          <span
+            className="px-4 py-2 rounded-lg text-sm font-medium"
+            style={{
+              backgroundColor: "var(--app-bg-surface)",
+              border:          "1px solid var(--app-border-strong)",
+              color:           "#818cf8",
+            }}
+          >
+            Suelta para subir imagen
+          </span>
+        </div>
+      )}
       {/* Slash command menu — rendered via fixed positioning so it's never clipped */}
       {slashMenuState && (
         <SlashCommandMenu

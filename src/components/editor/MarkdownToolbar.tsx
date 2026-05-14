@@ -1,6 +1,6 @@
 "use client";
 
-import { type MutableRefObject } from "react";
+import { type MutableRefObject, useRef } from "react";
 import { type EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 
@@ -186,12 +186,38 @@ const GROUPS: Btn[][] = [
 
 interface MarkdownToolbarProps {
   editorViewRef: MutableRefObject<EditorView | null>;
+  /**
+   * When provided, clicking the 🖼 button opens a file-picker and calls this
+   * ref's current function with the selected File so the editor can upload it.
+   */
+  onImageFileRef?: MutableRefObject<((file: File) => void) | null>;
 }
 
-export function MarkdownToolbar({ editorViewRef }: MarkdownToolbarProps) {
+export function MarkdownToolbar({ editorViewRef, onImageFileRef }: MarkdownToolbarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   function run(action: (v: EditorView) => void) {
     const view = editorViewRef.current;
     if (view) action(view);
+  }
+
+  function handleImageBtnMouseDown(e: React.MouseEvent) {
+    e.preventDefault(); // keep editor focused
+    if (onImageFileRef) {
+      fileInputRef.current?.click();
+    } else {
+      // Fallback: insert placeholder text
+      const view = editorViewRef.current;
+      if (view) insertBlock(view, "![alt](url)", 2);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !onImageFileRef?.current) return;
+    onImageFileRef.current(file);
+    // Reset so the same file can be re-selected
+    e.target.value = "";
   }
 
   return (
@@ -202,6 +228,15 @@ export function MarkdownToolbar({ editorViewRef }: MarkdownToolbarProps) {
         borderBottom: "1px solid var(--app-border)",
       }}
     >
+      {/* Hidden file input for image upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+
       {GROUPS.map((group, gi) => (
         <span key={gi} className="flex items-center gap-px">
           {/* Group separator */}
@@ -215,10 +250,14 @@ export function MarkdownToolbar({ editorViewRef }: MarkdownToolbarProps) {
           {group.map((btn) => (
             <button
               key={btn.id}
-              onMouseDown={(e) => {
-                e.preventDefault(); // keep editor focused
-                run(btn.action);
-              }}
+              onMouseDown={
+                btn.id === "img"
+                  ? handleImageBtnMouseDown
+                  : (e) => {
+                      e.preventDefault(); // keep editor focused
+                      run(btn.action);
+                    }
+              }
               title={btn.title}
               className={[
                 "px-2 py-0.5 rounded text-xs transition-colors select-none",
