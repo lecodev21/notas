@@ -623,13 +623,13 @@ export function EditorPanel({
       {mode !== "preview" && <MarkdownToolbar editorViewRef={editorViewRef} onImageFileRef={onImageFileRef} />}
 
       {/* Editor / Preview */}
-      <div className="flex-1 overflow-hidden flex relative">
+      <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
         {(mode === "edit" || mode === "split") && (
           <div
             ref={editorPanelRef}
             className={cn(
               "overflow-hidden relative",
-              mode === "split" ? "w-1/2" : "w-full",
+              mode === "split" ? "md:w-1/2 h-1/2 md:h-auto" : "w-full",
             )}
             style={mode === "split" ? { borderRight: "1px solid var(--app-border)" } : undefined}
             onContextMenu={handleContentContextMenu}
@@ -671,7 +671,7 @@ export function EditorPanel({
             ref={previewPanelRef}
             className={cn(
               "overflow-y-auto",
-              mode === "split" ? "w-1/2" : "w-full",
+              mode === "split" ? "md:w-1/2 h-1/2 md:h-auto" : "w-full",
             )}
             onContextMenu={handleContentContextMenu}
           >

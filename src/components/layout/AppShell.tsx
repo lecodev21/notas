@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ComponentType } from "react";
+import React, { useState, useEffect, type ComponentType } from "react";
 
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
@@ -41,6 +41,17 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [graphMode, setGraphMode] = useState(false);
+
+  // Mobile layout state
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"sidebar" | "list" | "editor">("list");
+
+  useEffect(() => {
+    function check() { setIsMobile(window.innerWidth < 768); }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
 
   // Data hooks
@@ -115,6 +126,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     if (note) {
       setSelectedNoteId(note.id);
       window.history.replaceState(null, "", `/notes/${note.id}`);
+      if (isMobile) setMobilePanel("editor");
     }
   }
 
@@ -167,6 +179,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
   function handleSelectNote(id: string) {
     setSelectedNoteId(id);
     window.history.replaceState(null, "", `/notes/${id}`);
+    if (isMobile) setMobilePanel("editor");
   }
 
   function handleSelectView(v: "all" | "pinned" | "trash") {
@@ -176,6 +189,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setSelectedStatus(null);
     setSelectedNoteId(null);
     setSearchQuery("");
+    if (isMobile) setMobilePanel("list");
   }
 
   function handleSelectNotebook(id: string) {
@@ -185,6 +199,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setSelectedStatus(null);
     setSelectedNoteId(null);
     setSearchQuery("");
+    if (isMobile) setMobilePanel("list");
   }
 
   function handleSelectTag(name: string) {
@@ -194,6 +209,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setSelectedStatus(null);
     setSelectedNoteId(null);
     setSearchQuery("");
+    if (isMobile) setMobilePanel("list");
   }
 
   function handleSelectStatus(status: NoteStatus) {
@@ -203,6 +219,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     setSelectedTag(null);
     setSelectedNoteId(null);
     setSearchQuery("");
+    if (isMobile) setMobilePanel("list");
   }
 
   async function handleTrash(id: string) {
@@ -433,99 +450,118 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     (displayedNotes.find((n) => n.id === selectedNoteId) as typeof selectedNote) ??
     selectedNote;
 
+  // Compute panel widths depending on mobile vs desktop
+  const sidebarWidth = isMobile
+    ? (mobilePanel === "sidebar" ? "100%" : 0)
+    : (focusMode ? 0 : "13rem");
+  const noteListWidth = isMobile
+    ? (mobilePanel === "list" ? "100%" : 0)
+    : (focusMode ? 0 : "16rem");
+
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Panel 1: Sidebar — collapses to 0 in focus mode */}
-      <div
-        className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
-        style={{ width: focusMode ? 0 : "13rem" /* w-52 = 208px */ }}
-      >
-        <div className="w-52 h-full">
-          <Sidebar
-            notebooks={notebookTree}
-            tags={tags}
-            selectedNotebook={selectedNotebook}
-            selectedTag={selectedTag}
-            selectedStatus={selectedStatus}
-            statusCounts={statusCounts as Record<NoteStatus, number>}
-            view={view}
-            onSelectView={handleSelectView}
-            onSelectNotebook={handleSelectNotebook}
-            onSelectTag={handleSelectTag}
-            onSelectStatus={handleSelectStatus}
-            onNewNotebook={(name) => createNotebook({ name })}
-            onNewSubNotebook={handleNewSubNotebook}
-            onRenameNotebook={handleRenameNotebook}
-            onDeleteNotebook={handleDeleteNotebook}
-            onDropNote={handleMoveNote}
-            onDropNotes={handleBulkMoveNotes}
-            graphMode={graphMode}
-            onToggleGraphMode={() => setGraphMode((v) => !v)}
-          />
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* ── Main 3-panel row ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Panel 1: Sidebar */}
+        <div
+          className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          style={{ width: sidebarWidth }}
+        >
+          <div className={isMobile ? "w-full h-full" : "w-52 h-full"}>
+            <Sidebar
+              notebooks={notebookTree}
+              tags={tags}
+              selectedNotebook={selectedNotebook}
+              selectedTag={selectedTag}
+              selectedStatus={selectedStatus}
+              statusCounts={statusCounts as Record<NoteStatus, number>}
+              view={view}
+              onSelectView={handleSelectView}
+              onSelectNotebook={handleSelectNotebook}
+              onSelectTag={handleSelectTag}
+              onSelectStatus={handleSelectStatus}
+              onNewNotebook={(name) => createNotebook({ name })}
+              onNewSubNotebook={handleNewSubNotebook}
+              onRenameNotebook={handleRenameNotebook}
+              onDeleteNotebook={handleDeleteNotebook}
+              onDropNote={handleMoveNote}
+              onDropNotes={handleBulkMoveNotes}
+              graphMode={graphMode}
+              onToggleGraphMode={() => setGraphMode((v) => !v)}
+            />
+          </div>
+        </div>
+
+        {/* Panel 2: Note List */}
+        <div
+          className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          style={{ width: noteListWidth }}
+        >
+          <div className={isMobile ? "w-full h-full" : "w-64 h-full"}>
+            <NoteList
+              notes={displayedNotes as Parameters<typeof NoteList>[0]["notes"]}
+              loading={notesLoading || searchLoading}
+              selectedNoteId={selectedNoteId}
+              exitingNoteId={exitingNoteId}
+              contextLabel={searchQuery ? `Resultados: "${searchQuery}"` : contextLabel}
+              isTrashView={view === "trash"}
+              notebooks={notebooks}
+              tags={tags}
+              onSelectNote={handleSelectNote}
+              onNewNote={handleNewNote}
+              onSearch={setSearchQuery}
+              onImport={handleImport}
+            />
+          </div>
+        </div>
+
+        {/* Panel 3: Editor or Graph */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          {graphMode ? (
+            <GraphPanel
+              nodes={graphNodes}
+              edges={graphEdges}
+              onSelectNote={(id) => {
+                handleSelectNote(id);
+                setGraphMode(false);
+              }}
+            />
+          ) : (
+            <EditorPanel
+              note={activeNote ?? null}
+              loading={noteLoading && !!selectedNoteId}
+              availableTags={tags}
+              focusMode={focusMode}
+              onToggleFocusMode={() => setFocusMode((v) => !v)}
+              onUpdate={handleUpdate}
+              onCreateTag={async (name) => {
+                const TAG_PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16"];
+                const color = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
+                return createTag({ name, color });
+              }}
+              onTogglePin={handleTogglePin}
+              onTrash={handleTrash}
+              onRestore={handleRestore}
+              onDeletePermanent={handleDeletePermanent}
+              availableNotes={allNotes.map((n) => ({ id: n.id, title: n.title }))}
+              onNavigateToNote={handleSelectNote}
+              onCreateAndNavigate={async (title) => {
+                const note = await createNote({ title, notebookId: selectedNotebook ?? undefined });
+                if (note) handleSelectNote(note.id);
+              }}
+            />
+          )}
         </div>
       </div>
 
-      {/* Panel 2: Note List — collapses to 0 in focus mode */}
-      <div
-        className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
-        style={{ width: focusMode ? 0 : "16rem" /* w-64 = 256px */ }}
-      >
-        <div className="w-64 h-full">
-          <NoteList
-            notes={displayedNotes as Parameters<typeof NoteList>[0]["notes"]}
-            loading={notesLoading || searchLoading}
-            selectedNoteId={selectedNoteId}
-            exitingNoteId={exitingNoteId}
-            contextLabel={searchQuery ? `Resultados: "${searchQuery}"` : contextLabel}
-            isTrashView={view === "trash"}
-            notebooks={notebooks}
-            tags={tags}
-            onSelectNote={handleSelectNote}
-            onNewNote={handleNewNote}
-            onSearch={setSearchQuery}
-            onImport={handleImport}
-          />
-        </div>
-      </div>
-
-      {/* Panel 3: Editor or Graph — expands to full width in focus mode */}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {graphMode ? (
-          <GraphPanel
-            nodes={graphNodes}
-            edges={graphEdges}
-            onSelectNote={(id) => {
-              handleSelectNote(id);
-              setGraphMode(false);
-            }}
-          />
-        ) : (
-          <EditorPanel
-            note={activeNote ?? null}
-            loading={noteLoading && !!selectedNoteId}
-            availableTags={tags}
-            focusMode={focusMode}
-            onToggleFocusMode={() => setFocusMode((v) => !v)}
-            onUpdate={handleUpdate}
-            onCreateTag={async (name) => {
-              const TAG_PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#3b82f6","#84cc16"];
-              const color = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
-              return createTag({ name, color });
-            }}
-            onTogglePin={handleTogglePin}
-            onTrash={handleTrash}
-            onRestore={handleRestore}
-            onDeletePermanent={handleDeletePermanent}
-            availableNotes={allNotes.map((n) => ({ id: n.id, title: n.title }))}
-            onNavigateToNote={handleSelectNote}
-            onCreateAndNavigate={async (title) => {
-              const note = await createNote({ title, notebookId: selectedNotebook ?? undefined });
-              if (note) handleSelectNote(note.id);
-            }}
-          />
-        )}
-      </div>
-
+      {/* ── Mobile bottom navigation bar ── */}
+      {isMobile && !focusMode && (
+        <MobileBottomNav
+          activePanel={mobilePanel}
+          hasNote={!!selectedNoteId}
+          onSelectPanel={setMobilePanel}
+        />
+      )}
     </div>
   );
 }
@@ -589,6 +625,81 @@ function GraphPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Mobile bottom navigation ───────────────────────────────────────────────
+
+function MobileBottomNav({
+  activePanel,
+  hasNote,
+  onSelectPanel,
+}: {
+  activePanel: "sidebar" | "list" | "editor";
+  hasNote: boolean;
+  onSelectPanel: (p: "sidebar" | "list" | "editor") => void;
+}) {
+  const items: { id: "sidebar" | "list" | "editor"; label: string; icon: React.ReactNode; disabled?: boolean }[] = [
+    {
+      id: "sidebar",
+      label: "Menú",
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M4 6h16M4 12h16M4 18h7" />
+        </svg>
+      ),
+    },
+    {
+      id: "list",
+      label: "Notas",
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+      ),
+    },
+    {
+      id: "editor",
+      label: "Editor",
+      disabled: !hasNote,
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <nav
+      className="shrink-0 flex items-center justify-around px-2 py-1 theme-transition"
+      style={{
+        borderTop: "1px solid var(--app-border)",
+        backgroundColor: "var(--app-bg-sidebar)",
+      }}
+    >
+      {items.map(({ id, label, icon, disabled }) => {
+        const isActive = activePanel === id;
+        return (
+          <button
+            key={id}
+            onClick={() => !disabled && onSelectPanel(id)}
+            disabled={disabled}
+            className="flex flex-col items-center gap-0.5 px-5 py-1.5 rounded-xl transition-colors disabled:opacity-35"
+            style={{
+              color: isActive ? "#818cf8" : "var(--app-text-muted)",
+              backgroundColor: isActive ? "rgba(99,102,241,0.12)" : undefined,
+            }}
+          >
+            {icon}
+            <span className="text-[10px] font-medium">{label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
