@@ -5,8 +5,136 @@ import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
 import { Children, cloneElement, isValidElement, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import React from "react";
 import { useTheme } from "@/lib/theme";
 import { slugify } from "@/lib/outline";
+import {
+  LuInfo, LuLightbulb, LuTriangleAlert, LuCircleAlert, LuOctagonAlert,
+} from "react-icons/lu";
+
+// ── GFM Alerts ────────────────────────────────────────────────────────────────
+
+type AlertType = "NOTE" | "TIP" | "WARNING" | "IMPORTANT" | "CAUTION";
+
+const ALERT_META: Record<AlertType, {
+  Icon:  React.ComponentType<{ style?: React.CSSProperties }>;
+  color: string;
+  bg:    string;
+  label: string;
+}> = {
+  NOTE:      { Icon: LuInfo,          color: "#3b82f6", bg: "rgba(59,130,246,0.08)",  label: "Nota"       },
+  TIP:       { Icon: LuLightbulb,     color: "#22c55e", bg: "rgba(34,197,94,0.08)",   label: "Consejo"    },
+  IMPORTANT: { Icon: LuCircleAlert,   color: "#a855f7", bg: "rgba(168,85,247,0.08)",  label: "Importante" },
+  WARNING:   { Icon: LuTriangleAlert, color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  label: "Atención"   },
+  CAUTION:   { Icon: LuOctagonAlert,  color: "#ef4444", bg: "rgba(239,68,68,0.08)",   label: "Precaución" },
+};
+
+/** Recursively extracts plain text from a React node tree. */
+function extractText(node: ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (isValidElement(node)) {
+    const el = node as React.ReactElement<{ children?: ReactNode }>;
+    return extractText(el.props?.children);
+  }
+  return "";
+}
+
+/**
+ * Remark plugin: detects `> [!TYPE]` blockquotes, strips the marker paragraph,
+ * and adds `data-alert-type="note"` (etc.) to the HAST properties so the
+ * custom `blockquote` React component can render it as a styled callout.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function remarkAlerts() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (tree: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function walk(node: any) {
+      if (node.type === "blockquote") {
+        const first = node.children?.[0];
+        if (first?.type === "paragraph") {
+          const text = first.children?.[0];
+          if (text?.type === "text") {
+            // remark joins consecutive `>` lines into one text node separated
+            // by \n, so the value might be "[!NOTE]\nContent here".
+            // We only check the FIRST line of the text node.
+            const rawValue   = text.value as string;
+            const firstLine  = rawValue.split("\n")[0];
+            const m = firstLine.trim().match(
+              /^\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]$/i
+            );
+            if (m) {
+              const alertType  = m[1].toLowerCase();
+              const restOfText = rawValue.slice(firstLine.length + 1); // after \n
+
+              if (restOfText) {
+                // Content follows on the same paragraph — keep it but
+                // replace the text node with the remaining content.
+                first.children = [
+                  { ...text, value: restOfText },
+                  ...first.children.slice(1),
+                ];
+                // Leave node.children as-is (first paragraph still present)
+              } else if (first.children.length <= 1) {
+                // Whole paragraph was just [!TYPE] — remove it entirely.
+                node.children = node.children.slice(1);
+              } else {
+                // Other children exist (break nodes, etc.) — drop first text node.
+                first.children = first.children.slice(1);
+              }
+
+              node.data = node.data ?? {};
+              node.data.hProperties = {
+                ...node.data.hProperties,
+                "data-alert-type": alertType,
+              };
+            }
+          }
+        }
+      }
+      if (Array.isArray(node.children)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        node.children.forEach((child: any) => walk(child));
+      }
+    }
+    walk(tree);
+  };
+}
+
+function AlertBlock({ type, children }: { type: AlertType; children: ReactNode }) {
+  const { Icon, color, bg, label } = ALERT_META[type];
+  return (
+    <div
+      className="my-4 not-prose"
+      style={{
+        borderLeft:      `4px solid ${color}`,
+        borderRadius:    "0 6px 6px 0",
+        backgroundColor: bg,
+        padding:         "10px 16px",
+      }}
+    >
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <Icon style={{ width: 14, height: 14, color, flexShrink: 0 }} />
+        <span style={{
+          fontSize:      11,
+          fontWeight:    700,
+          textTransform: "uppercase",
+          letterSpacing: "0.07em",
+          color,
+        }}>
+          {label}
+        </span>
+      </div>
+      {/* Content — rendered in a prose sub-context so inline formatting works */}
+      <div className="prose prose-sm max-w-none" style={{ color: "var(--app-text-secondary)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ── Language alias map ─────────────────────────────────────────────────────
 // Maps common shorthands to the name highlight.js registers the language under.
@@ -351,6 +479,21 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       }
       return <a href={href}>{children}</a>;
     },
+    // ── Alert blockquotes ─────────────────────────────────────────────────
+    // The remarkAlerts plugin strips [!TYPE] from the AST and sets
+    // data-alert-type="note" on the HAST node, which arrives here as a prop.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    blockquote: ({ children, ...props }: any) => {
+      const alertType = props["data-alert-type"] as string | undefined;
+      if (alertType) {
+        const type = alertType.toUpperCase() as AlertType;
+        if (type in ALERT_META) {
+          return <AlertBlock type={type}>{children}</AlertBlock>;
+        }
+      }
+      return <blockquote>{children}</blockquote>;
+    },
+
     // ── Headings with IDs (for outline scroll targets) ──────────────────────
     // Each heading receives an id derived from its text so OutlineView can
     // scroll to it.  The slugify function is shared with parseHeadings so the
@@ -369,25 +512,27 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     h6: ({ children }: any) => <h6 id={slugify(String(children))}>{children}</h6>,
     } as {
-      input:  React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
+      input:      React.ComponentType<React.InputHTMLAttributes<HTMLInputElement>>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      li:     React.ComponentType<any>;
+      li:         React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      table:  React.ComponentType<any>;
+      table:      React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      thead:  React.ComponentType<any>;
+      thead:      React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tbody:  React.ComponentType<any>;
+      tbody:      React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tr:     React.ComponentType<any>;
+      tr:         React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      th:     React.ComponentType<any>;
+      th:         React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      td:     React.ComponentType<any>;
+      td:         React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pre:    React.ComponentType<any>;
+      pre:        React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      a:      React.ComponentType<any>;
+      a:          React.ComponentType<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      blockquote: React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       h1: React.ComponentType<any>; h2: React.ComponentType<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -439,7 +584,7 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       <div ref={containerRef} className={proseClass}>
         {content ? (
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkAlerts]}
             components={components}
             urlTransform={(url) => url}
           >

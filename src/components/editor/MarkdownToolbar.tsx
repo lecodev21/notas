@@ -7,6 +7,7 @@ import {
   LuBold, LuBraces, LuCode, LuHeading1, LuHeading2, LuHeading3,
   LuImage, LuItalic, LuLink, LuList, LuListChecks, LuListOrdered,
   LuMinus, LuQuote, LuStrikethrough, LuTable,
+  LuBell, LuInfo, LuLightbulb, LuCircleAlert, LuTriangleAlert, LuOctagonAlert,
 } from "react-icons/lu";
 
 // ── Editor commands ───────────────────────────────────────────────────────
@@ -142,6 +143,176 @@ const TABLE = `| Columna 1 | Columna 2 | Columna 3 |
 
 // backtick-fenced code block; cursor lands inside the block (offset = 4)
 const CODE_BLOCK = "```\ncódigo\n```";
+
+// ── Alert insertion ───────────────────────────────────────────────────────
+
+const ALERT_TYPES: {
+  type:  string;
+  Icon:  React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  color: string;
+  label: string;
+}[] = [
+  { type: "NOTE",      Icon: LuInfo,          color: "#3b82f6", label: "Nota"       },
+  { type: "TIP",       Icon: LuLightbulb,     color: "#22c55e", label: "Consejo"    },
+  { type: "IMPORTANT", Icon: LuCircleAlert,   color: "#a855f7", label: "Importante" },
+  { type: "WARNING",   Icon: LuTriangleAlert, color: "#f59e0b", label: "Atención"   },
+  { type: "CAUTION",   Icon: LuOctagonAlert,  color: "#ef4444", label: "Precaución" },
+];
+
+function insertAlert(view: EditorView, type: string) {
+  const { state } = view;
+  const { from }  = state.selection.main;
+  const line      = state.doc.lineAt(from);
+  const onEmpty   = line.text.trim() === "";
+  const insertPos = onEmpty ? line.from : line.to;
+  const prefix    = onEmpty ? "" : "\n";
+  const template  = `> [!${type}]\n> `;
+  view.dispatch({
+    changes:   { from: insertPos, insert: prefix + template },
+    selection: EditorSelection.cursor(insertPos + prefix.length + template.length),
+  });
+  view.focus();
+}
+
+// ── AlertDropdown ──────────────────────────────────────────────────────────
+
+function AlertDropdown({ editorViewRef }: { editorViewRef: React.MutableRefObject<EditorView | null> }) {
+  const [open, setOpen]   = useState(false);
+  const [pos,  setPos]    = useState<{ x: number; y: number } | null>(null);
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const [tip, setTip]     = useState(false);
+  const tipTimer          = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        !btnRef.current?.contains(e.target as Node) &&
+        !dropRef.current?.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggle() {
+    if (open) { setOpen(false); return; }
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPos({ x: rect.left, y: rect.bottom });
+    setOpen(true);
+  }
+
+  function select(type: string) {
+    setOpen(false);
+    const view = editorViewRef.current;
+    if (view) insertAlert(view, type);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onMouseDown={(e) => { e.preventDefault(); toggle(); }}
+        onMouseEnter={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.backgroundColor = "var(--app-hover-strong)";
+          el.style.color           = open ? "#818cf8" : "var(--app-text-primary)";
+          if (tipTimer.current) clearTimeout(tipTimer.current);
+          tipTimer.current = setTimeout(() => setTip(true), 350);
+        }}
+        onMouseLeave={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.backgroundColor = open ? "rgba(99,102,241,0.15)" : "";
+          el.style.color           = open ? "#818cf8" : "var(--app-text-muted)";
+          if (tipTimer.current) clearTimeout(tipTimer.current);
+          setTip(false);
+        }}
+        className="px-2 py-0.5 rounded text-xs transition-colors select-none min-w-[1.6rem] text-center leading-5"
+        style={{
+          color:           open ? "#818cf8" : "var(--app-text-muted)",
+          backgroundColor: open ? "rgba(99,102,241,0.15)" : "",
+        }}
+        title=""
+      >
+        <LuBell className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Tooltip */}
+      {tip && !open && pos === null && (
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md whitespace-nowrap pointer-events-none"
+          style={{
+            position:        "fixed",
+            top:             (btnRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
+            left:            (btnRef.current?.getBoundingClientRect().left ?? 0) +
+                             (btnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+            transform:       "translateX(-50%)",
+            zIndex:          9999,
+            backgroundColor: "var(--app-bg-menu)",
+            border:          "1px solid var(--app-border-strong)",
+            boxShadow:       "0 4px 12px rgba(0,0,0,0.25)",
+          }}
+        >
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+            Alerta / Callout
+          </span>
+        </div>
+      )}
+
+      {/* Dropdown */}
+      {open && pos && (
+        <div
+          ref={dropRef}
+          className="py-1 rounded-lg shadow-xl"
+          style={{
+            position:        "fixed",
+            top:             pos.y + 4,
+            left:            pos.x,
+            zIndex:          9999,
+            width:           170,
+            backgroundColor: "var(--app-bg-menu)",
+            border:          "1px solid var(--app-border-strong)",
+            boxShadow:       "0 8px 24px rgba(0,0,0,0.3)",
+          }}
+        >
+          <p
+            className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--app-text-muted)" }}
+          >
+            Insertar alerta
+          </p>
+          <div className="h-px mx-2 mb-1" style={{ backgroundColor: "var(--app-border)" }} />
+          {ALERT_TYPES.map(({ type, Icon, color, label }) => (
+            <button
+              key={type}
+              onMouseDown={(e) => { e.preventDefault(); select(type); }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-left transition-colors"
+              style={{ color: "var(--app-text-secondary)" }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+              }}
+            >
+              <Icon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
+              <span>{label}</span>
+              <span
+                className="ml-auto font-mono text-[9px] opacity-50"
+                style={{ color: "var(--app-text-muted)" }}
+              >
+                {type}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 // ── Shortcut display ──────────────────────────────────────────────────────
 //
@@ -397,6 +568,15 @@ export function MarkdownToolbar({ editorViewRef, onImageFileRef }: MarkdownToolb
           ))}
         </span>
       ))}
+
+      {/* Alert / callout dropdown — always last */}
+      <span className="flex items-center gap-px">
+        <span
+          className="w-px h-3.5 mx-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: "var(--app-border-strong)" }}
+        />
+        <AlertDropdown editorViewRef={editorViewRef} />
+      </span>
     </div>
   );
 }
