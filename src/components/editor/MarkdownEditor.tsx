@@ -466,10 +466,12 @@ function toggleLink(view: EditorView): boolean {
 // (e.g. the default CodeMirror history/indent bindings).
 const formattingKeymap = Prec.high(
   keymap.of([
-    { key: "Mod-b",       run: (v) => toggleWrap(v, "**", "**", "texto") },
-    { key: "Mod-i",       run: (v) => toggleWrap(v, "*",  "*",  "texto", isItalicWrapped) },
-    { key: "Mod-k",       run: toggleLink },
-    { key: "Mod-Shift-c", run: (v) => toggleWrap(v, "```", "```", "código") },
+    { key: "Mod-b",         run: (v) => toggleWrap(v, "**", "**", "texto") },
+    { key: "Mod-i",         run: (v) => toggleWrap(v, "*",  "*",  "texto", isItalicWrapped) },
+    { key: "Mod-k",         run: toggleLink },
+    { key: "Mod-e",         run: (v) => toggleWrap(v, "`",  "`",  "código") },
+    { key: "Mod-Shift-s",   run: (v) => toggleWrap(v, "~~", "~~", "texto") },
+    { key: "Mod-Shift-c",   run: (v) => toggleWrap(v, "```", "```", "código") },
   ]),
 );
 
@@ -966,13 +968,21 @@ function SlashCommandMenu({ commands, selectedIdx, coords, onSelect, onHover }: 
     selectedRef.current?.scrollIntoView({ block: "nearest" });
   }, [selectedIdx]);
 
+  const MENU_MAX_H = 288;
+  const MARGIN     = 6;
+  const fitsBelow  =
+    typeof window !== "undefined" &&
+    coords.top + MARGIN + MENU_MAX_H <= window.innerHeight;
+
   const menuStyle: React.CSSProperties = {
     position:        "fixed",
-    top:             coords.top + 6,
+    ...(fitsBelow
+      ? { top:    coords.top  + MARGIN }
+      : { bottom: (typeof window !== "undefined" ? window.innerHeight : 0) - coords.top + MARGIN }),
     left:            coords.left,
     zIndex:          9999,
     width:           228,
-    maxHeight:       288,
+    maxHeight:       MENU_MAX_H,
     overflowY:       "auto",
     borderRadius:    "10px",
     boxShadow:       "0 8px 28px rgba(0,0,0,0.35)",

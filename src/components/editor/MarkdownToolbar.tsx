@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type MutableRefObject, useRef } from "react";
+import React, { type MutableRefObject, useRef, useState } from "react";
 import { type EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import {
@@ -143,14 +143,32 @@ const TABLE = `| Columna 1 | Columna 2 | Columna 3 |
 // backtick-fenced code block; cursor lands inside the block (offset = 4)
 const CODE_BLOCK = "```\ncódigo\n```";
 
+// ── Shortcut display ──────────────────────────────────────────────────────
+//
+// Shortcuts are stored as "Ctrl+B" strings.
+// On macOS, "Ctrl" → "⌘" and "Shift" → "⇧" for a native feel.
+
+function useShortcutKeys(shortcut: string): string[] {
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /mac/i.test(navigator.userAgent) &&
+    !/windows|win32/i.test(navigator.userAgent);
+  const display = isMac
+    ? shortcut.replace("Ctrl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥")
+    : shortcut;
+  return display.split("+");
+}
+
 // ── Toolbar definition ────────────────────────────────────────────────────
 
 interface Btn {
-  id:     string;
-  label:  React.ReactNode;
-  title:  string;
-  cls?:   string;
-  action: (view: EditorView) => void;
+  id:        string;
+  label:     React.ReactNode;
+  title:     string;
+  /** Keyboard shortcut shown in the tooltip, e.g. "Ctrl+B". */
+  shortcut?: string;
+  cls?:      string;
+  action:    (view: EditorView) => void;
 }
 
 const ICN = "w-3.5 h-3.5";
@@ -158,10 +176,10 @@ const ICN = "w-3.5 h-3.5";
 const GROUPS: Btn[][] = [
   // ── Inline formatting
   [
-    { id: "bold",   label: <LuBold          className={ICN} />, title: "Negrita",        action: v => wrapSelection(v, "**", "**", "texto")  },
-    { id: "italic", label: <LuItalic        className={ICN} />, title: "Cursiva",        action: v => wrapSelection(v, "*",  "*",  "texto")  },
-    { id: "strike", label: <LuStrikethrough className={ICN} />, title: "Tachado",        action: v => wrapSelection(v, "~~", "~~", "texto")  },
-    { id: "icode",  label: <LuCode          className={ICN} />, title: "Código inline",  action: v => wrapSelection(v, "`",  "`",  "código") },
+    { id: "bold",   label: <LuBold          className={ICN} />, title: "Negrita",        shortcut: "Ctrl+B",       action: v => wrapSelection(v, "**", "**", "texto")  },
+    { id: "italic", label: <LuItalic        className={ICN} />, title: "Cursiva",        shortcut: "Ctrl+I",       action: v => wrapSelection(v, "*",  "*",  "texto")  },
+    { id: "strike", label: <LuStrikethrough className={ICN} />, title: "Tachado",        shortcut: "Ctrl+Shift+S", action: v => wrapSelection(v, "~~", "~~", "texto")  },
+    { id: "icode",  label: <LuCode          className={ICN} />, title: "Código inline",  shortcut: "Ctrl+E",       action: v => wrapSelection(v, "`",  "`",  "código") },
   ],
   // ── Headings
   [
@@ -176,22 +194,135 @@ const GROUPS: Btn[][] = [
     { id: "ol",    label: <LuListOrdered className={ICN} />, title: "Lista numerada",   action: v => toggleLinePrefix(v, "1. ")    },
     { id: "task",  label: <LuListChecks  className={ICN} />, title: "Lista de tareas",  action: v => toggleLinePrefix(v, "- [ ] ") },
     { id: "hr",    label: <LuMinus       className={ICN} />, title: "Línea divisora",   action: v => insertBlock(v, "---", 3)      },
-    { id: "cbk",   label: <LuBraces      className={ICN} />, title: "Bloque de código", action: v => insertBlock(v, CODE_BLOCK, 4) },
+    { id: "cbk",   label: <LuBraces      className={ICN} />, title: "Bloque de código", shortcut: "Ctrl+Shift+C", action: v => insertBlock(v, CODE_BLOCK, 4) },
   ],
   // ── Insert
   [
-    { id: "link",  label: <LuLink  className={ICN} />, title: "Enlace",  action: insertLink                             },
-    { id: "img",   label: <LuImage className={ICN} />, title: "Imagen",  action: v => insertBlock(v, "![alt](url)", 2) },
-    { id: "table", label: <LuTable className={ICN} />, title: "Tabla",   action: v => insertBlock(v, TABLE, 2)         },
+    { id: "link",  label: <LuLink  className={ICN} />, title: "Enlace",  shortcut: "Ctrl+K", action: insertLink                             },
+    { id: "img",   label: <LuImage className={ICN} />, title: "Imagen",                      action: v => insertBlock(v, "![alt](url)", 2) },
+    { id: "table", label: <LuTable className={ICN} />, title: "Tabla",                       action: v => insertBlock(v, TABLE, 2)         },
   ],
 ];
+
+// ── Tooltip ───────────────────────────────────────────────────────────────
+// Uses `position: fixed` so it escapes the toolbar's `overflow-x-auto` clip.
+
+interface TooltipState {
+  title:     string;
+  shortcut?: string;
+  x:         number;   // centre of the button (fixed coords)
+  y:         number;   // bottom of the button
+}
+
+function TooltipPopup({ tip }: { tip: TooltipState }) {
+  const keys = tip.shortcut ? useShortcutKeys(tip.shortcut) : []; // eslint-disable-line react-hooks/rules-of-hooks
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-1 rounded-md whitespace-nowrap pointer-events-none"
+      style={{
+        position:        "fixed",
+        top:             tip.y + 6,
+        left:            tip.x,
+        transform:       "translateX(-50%)",
+        zIndex:          9999,
+        backgroundColor: "var(--app-bg-menu)",
+        border:          "1px solid var(--app-border-strong)",
+        boxShadow:       "0 4px 12px rgba(0,0,0,0.25)",
+      }}
+    >
+      <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+        {tip.title}
+      </span>
+      {keys.length > 0 && (
+        <span className="flex items-center gap-0.5">
+          {keys.map((k, i) => (
+            <kbd
+              key={i}
+              className="text-[10px] px-1 py-px rounded leading-none font-mono"
+              style={{
+                backgroundColor: "var(--app-hover-strong)",
+                color:           "var(--app-text-muted)",
+                border:          "1px solid var(--app-border-strong)",
+              }}
+            >
+              {k}
+            </kbd>
+          ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── ToolbarButton ─────────────────────────────────────────────────────────
+
+function ToolbarButton({
+  btn,
+  onMouseDown,
+}: {
+  btn:         Btn;
+  onMouseDown: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const [tip, setTip] = useState<TooltipState | null>(null);
+  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const btnRef        = useRef<HTMLButtonElement>(null);
+
+  function show() {
+    timerRef.current = setTimeout(() => {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setTip({
+        title:    btn.title,
+        shortcut: btn.shortcut,
+        x:        rect.left + rect.width / 2,
+        y:        rect.bottom,
+      });
+    }, 350);
+  }
+
+  function hide() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setTip(null);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onMouseDown={onMouseDown}
+        onMouseEnter={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.backgroundColor = "var(--app-hover-strong)";
+          el.style.color           = "var(--app-text-primary)";
+          show();
+        }}
+        onMouseLeave={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.backgroundColor = "";
+          el.style.color           = "var(--app-text-muted)";
+          hide();
+        }}
+        className={[
+          "px-2 py-0.5 rounded text-xs transition-colors select-none",
+          "min-w-[1.6rem] text-center leading-5",
+          btn.cls ?? "",
+        ].join(" ")}
+        style={{ color: "var(--app-text-muted)" }}
+      >
+        {btn.label}
+      </button>
+
+      {tip && <TooltipPopup tip={tip} />}
+    </>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────
 
 interface MarkdownToolbarProps {
   editorViewRef: MutableRefObject<EditorView | null>;
   /**
-   * When provided, clicking the 🖼 button opens a file-picker and calls this
+   * When provided, clicking the image button opens a file-picker and calls this
    * ref's current function with the selected File so the editor can upload it.
    */
   onImageFileRef?: MutableRefObject<((file: File) => void) | null>;
@@ -205,12 +336,11 @@ export function MarkdownToolbar({ editorViewRef, onImageFileRef }: MarkdownToolb
     if (view) action(view);
   }
 
-  function handleImageBtnMouseDown(e: React.MouseEvent) {
+  function handleImageBtnMouseDown(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault(); // keep editor focused
     if (onImageFileRef) {
       fileInputRef.current?.click();
     } else {
-      // Fallback: insert placeholder text
       const view = editorViewRef.current;
       if (view) insertBlock(view, "![alt](url)", 2);
     }
@@ -252,8 +382,9 @@ export function MarkdownToolbar({ editorViewRef, onImageFileRef }: MarkdownToolb
           )}
 
           {group.map((btn) => (
-            <button
+            <ToolbarButton
               key={btn.id}
+              btn={btn}
               onMouseDown={
                 btn.id === "img"
                   ? handleImageBtnMouseDown
@@ -262,26 +393,7 @@ export function MarkdownToolbar({ editorViewRef, onImageFileRef }: MarkdownToolb
                       run(btn.action);
                     }
               }
-              title={btn.title}
-              className={[
-                "px-2 py-0.5 rounded text-xs transition-colors select-none",
-                "min-w-[1.6rem] text-center leading-5",
-                btn.cls ?? "",
-              ].join(" ")}
-              style={{ color: "var(--app-text-muted)" }}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.backgroundColor = "var(--app-hover-strong)";
-                el.style.color           = "var(--app-text-primary)";
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.backgroundColor = "";
-                el.style.color           = "var(--app-text-muted)";
-              }}
-            >
-              {btn.label}
-            </button>
+            />
           ))}
         </span>
       ))}

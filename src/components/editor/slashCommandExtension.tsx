@@ -7,15 +7,20 @@
  * the menu can be navigated without CodeMirror receiving those keys.
  */
 
+import React from "react";
 import { keymap, ViewPlugin, ViewUpdate, EditorView } from "@codemirror/view";
 import { EditorSelection, Prec } from "@codemirror/state";
+import {
+  LuBraces, LuHeading1, LuHeading2, LuHeading3,
+  LuImage, LuList, LuListChecks, LuMinus, LuQuote, LuTable,
+} from "react-icons/lu";
 
 // ── Command definitions ───────────────────────────────────────────────────────
 
 export interface SlashCommand {
   id:           string;
   label:        string;
-  icon:         string;
+  icon:         React.ReactNode;
   insert:       string;
   /** Cursor offset from insertion start after applying. Default = insert.length. */
   cursorOffset?: number;
@@ -24,54 +29,56 @@ export interface SlashCommand {
   keywords:     string[];
 }
 
+const ICN = "w-4 h-4";
+
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
-    id: "h1", label: "Título 1", icon: "H1",
+    id: "h1", label: "Título 1", icon: <LuHeading1 className={ICN} />,
     insert: "# ",
     keywords: ["heading", "titulo", "h1", "title"],
   },
   {
-    id: "h2", label: "Título 2", icon: "H2",
+    id: "h2", label: "Título 2", icon: <LuHeading2 className={ICN} />,
     insert: "## ",
     keywords: ["heading", "titulo", "h2"],
   },
   {
-    id: "h3", label: "Título 3", icon: "H3",
+    id: "h3", label: "Título 3", icon: <LuHeading3 className={ICN} />,
     insert: "### ",
     keywords: ["heading", "titulo", "h3"],
   },
   {
-    id: "divider", label: "Divisor", icon: "—",
+    id: "divider", label: "Divisor", icon: <LuMinus className={ICN} />,
     insert: "---\n",
     keywords: ["divider", "divisor", "hr", "linea", "line", "separador"],
   },
   {
-    id: "quote", label: "Cita", icon: "❝",
+    id: "quote", label: "Cita", icon: <LuQuote className={ICN} />,
     insert: "> ",
     keywords: ["quote", "cita", "blockquote"],
   },
   {
-    id: "code", label: "Bloque de código", icon: "</>",
+    id: "code", label: "Bloque de código", icon: <LuBraces className={ICN} />,
     insert: "```\n\n```", cursorOffset: 4,
     keywords: ["code", "codigo", "fence", "bloque"],
   },
   {
-    id: "table", label: "Tabla", icon: "⊞",
+    id: "table", label: "Tabla", icon: <LuTable className={ICN} />,
     insert: "| Columna 1 | Columna 2 |\n|-----------|----------|\n| ",
     keywords: ["table", "tabla"],
   },
   {
-    id: "image", label: "Imagen", icon: "🖼",
+    id: "image", label: "Imagen", icon: <LuImage className={ICN} />,
     insert: "![](url)", selectRange: [4, 7],
     keywords: ["image", "imagen", "img", "photo", "foto"],
   },
   {
-    id: "task", label: "Lista de tareas", icon: "☑",
+    id: "task", label: "Lista de tareas", icon: <LuListChecks className={ICN} />,
     insert: "- [ ] ",
     keywords: ["task", "tarea", "todo", "checklist"],
   },
   {
-    id: "list", label: "Lista", icon: "•",
+    id: "list", label: "Lista", icon: <LuList className={ICN} />,
     insert: "- ",
     keywords: ["list", "lista", "bullet"],
   },
