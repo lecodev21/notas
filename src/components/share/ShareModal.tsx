@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { LuCheck, LuFileText, LuLink2, LuLock, LuRefreshCw } from "react-icons/lu";
 
 interface ShareModalProps {
   noteId: string;
@@ -76,8 +77,9 @@ export function ShareModal({
     >
       <div className="space-y-4">
         {/* Note title preview */}
-        <p className="text-sm truncate" style={{ color: "var(--app-text-muted)" }}>
-          📄 {noteTitle}
+        <p className="text-sm truncate flex items-center gap-1.5" style={{ color: "var(--app-text-muted)" }}>
+          <LuFileText className="w-3.5 h-3.5 shrink-0" />
+          {noteTitle}
         </p>
 
         {token ? (
@@ -120,7 +122,7 @@ export function ShareModal({
                   onClick={copyLink}
                   style={copied ? { backgroundColor: "#22c55e" } : undefined}
                 >
-                  {copied ? "✓ Copiado" : "Copiar"}
+                  {copied ? <span className="flex items-center gap-1"><LuCheck className="w-3 h-3" /> Copiado</span> : "Copiar"}
                 </Button>
               </div>
             </div>
@@ -134,7 +136,7 @@ export function ShareModal({
                 disabled={busy}
                 title="Invalida el link actual y genera uno nuevo"
               >
-                {busy ? "Generando…" : "🔄 Regenerar link"}
+                {busy ? "Generando…" : <span className="flex items-center gap-1.5"><LuRefreshCw className="w-3 h-3" /> Regenerar link</span>}
               </Button>
               <Button
                 size="sm"
@@ -144,7 +146,7 @@ export function ShareModal({
                 style={{ color: "#f87171" }}
                 title="El link deja de funcionar"
               >
-                {busy ? "Desactivando…" : "🔒 Desactivar"}
+                {busy ? "Desactivando…" : <span className="flex items-center gap-1.5"><LuLock className="w-3 h-3" /> Desactivar</span>}
               </Button>
             </div>
           </>
@@ -155,7 +157,7 @@ export function ShareModal({
               className="rounded-lg p-4 text-center space-y-3"
               style={{ backgroundColor: "var(--app-bg-input)", border: "1px solid var(--app-border)" }}
             >
-              <div className="text-2xl">🔒</div>
+              <LuLock className="w-8 h-8 mx-auto" style={{ color: "var(--app-text-muted)" }} />
               <p className="text-sm" style={{ color: "var(--app-text-secondary)" }}>
                 Esta nota es privada
               </p>
@@ -170,7 +172,7 @@ export function ShareModal({
                 onClick={generate}
                 disabled={busy}
               >
-                {busy ? "Generando…" : "🔗 Generar link"}
+                {busy ? "Generando…" : <span className="flex items-center gap-1.5"><LuLink2 className="w-3 h-3" /> Generar link</span>}
               </Button>
             </div>
           </>

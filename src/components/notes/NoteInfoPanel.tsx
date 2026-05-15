@@ -2,6 +2,7 @@
 
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import { formatDateTime } from "@/lib/utils";
+import { LuCalendar, LuPencilLine, LuSquareCheck } from "react-icons/lu";
 
 type NoteWithRelations = Note & {
   noteTags: (NoteTag & { tag: Tag })[];
@@ -35,7 +36,7 @@ export function NoteInfoPanel({ note, body }: NoteInfoPanelProps) {
     >
       {/* Created */}
       <span className="flex items-center gap-1.5">
-        <span className="opacity-60">📅</span>
+        <LuCalendar className="w-3 h-3 opacity-60" style={{ color: "var(--app-text-muted)" }} />
         <span style={{ color: "var(--app-text-muted)" }}>Creada</span>
         <span style={{ color: "var(--app-text-secondary)" }}>
           {formatDateTime(note.createdAt)}
@@ -46,7 +47,7 @@ export function NoteInfoPanel({ note, body }: NoteInfoPanelProps) {
 
       {/* Modified */}
       <span className="flex items-center gap-1.5">
-        <span className="opacity-60">✏️</span>
+        <LuPencilLine className="w-3 h-3 opacity-60" style={{ color: "var(--app-text-muted)" }} />
         <span style={{ color: "var(--app-text-muted)" }}>Modificada</span>
         <span style={{ color: "var(--app-text-secondary)" }}>
           {formatDateTime(note.updatedAt)}
@@ -58,7 +59,7 @@ export function NoteInfoPanel({ note, body }: NoteInfoPanelProps) {
         <>
           <span style={{ color: "var(--app-border-strong)" }}>·</span>
           <span className="flex items-center gap-1.5">
-            <span className="opacity-60">☑️</span>
+            <LuSquareCheck className="w-3 h-3 opacity-60" style={{ color: "var(--app-text-muted)" }} />
             <span style={{ color: "var(--app-text-muted)" }}>Tareas</span>
             <span style={{ color: "var(--app-text-secondary)" }}>
               {tasks.done}/{tasks.total}

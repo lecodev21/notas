@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from "react";
 import { useBulkNotes } from "@/hooks/useNotes";
 import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
 import type { Tag } from "@/generated/prisma/client";
+import { LuCheck, LuChevronDown, LuFolder, LuFolderOpen, LuNotebook, LuTag, LuTrash2, LuX } from "react-icons/lu";
 
 interface Notebook { id: string; name: string; parentId: string | null; }
 
@@ -23,7 +24,7 @@ function Dropdown({
   children,
 }: {
   label:    string;
-  icon:     string;
+  icon:     React.ReactNode;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -62,11 +63,9 @@ function Dropdown({
             : "rgba(99,102,241,0.1)";
         }}
       >
-        <span>{icon}</span>
+        {icon}
         <span>{label}</span>
-        <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-        </svg>
+        <LuChevronDown className="w-2.5 h-2.5 opacity-60" />
       </button>
 
       {open && (
@@ -92,7 +91,7 @@ function DropItem({
   active,
   onClick,
 }: {
-  icon?:      string;
+  icon?:      React.ReactNode;
   iconColor?: string;
   label:      string;
   active?:    boolean;
@@ -111,13 +110,11 @@ function DropItem({
       onClick={onClick}
     >
       {icon && (
-        <span className="font-bold text-[10px]" style={{ color: iconColor ?? "inherit" }}>{icon}</span>
+        <span className="font-bold text-[10px] flex items-center" style={{ color: iconColor ?? "inherit" }}>{icon}</span>
       )}
       <span className="truncate">{label}</span>
       {active && (
-        <svg className="w-3 h-3 shrink-0 ml-auto text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-        </svg>
+        <LuCheck className="w-3 h-3 shrink-0 ml-auto text-indigo-400" />
       )}
     </button>
   );
@@ -166,9 +163,7 @@ export function BulkActionBar({ selectedIds, notebooks, tags, onClear, onDone }:
             (e.currentTarget as HTMLButtonElement).style.color = "var(--app-text-muted)";
           }}
         >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <LuX className="w-3 h-3" />
         </button>
       </div>
 
@@ -176,11 +171,11 @@ export function BulkActionBar({ selectedIds, notebooks, tags, onClear, onDone }:
       <div className="flex flex-wrap gap-1.5" style={{ opacity: busy ? 0.5 : 1, pointerEvents: busy ? "none" : "auto" }}>
 
         {/* ── Mover ── */}
-        <Dropdown label="Mover" icon="📁">
+        <Dropdown label="Mover" icon={<LuFolder className="w-3.5 h-3.5" />}>
           {(close) => (
             <>
               <DropItem
-                icon="📂"
+                icon={<LuFolderOpen className="w-3.5 h-3.5" />}
                 label="Sin notebook"
                 onClick={() => { close(); run({ action: "move", notebookId: null }); }}
               />
@@ -190,7 +185,7 @@ export function BulkActionBar({ selectedIds, notebooks, tags, onClear, onDone }:
               {notebooks.map((nb) => (
                 <DropItem
                   key={nb.id}
-                  icon="📓"
+                  icon={<LuNotebook className="w-3.5 h-3.5" />}
                   label={nb.name}
                   onClick={() => { close(); run({ action: "move", notebookId: nb.id }); }}
                 />
@@ -201,7 +196,7 @@ export function BulkActionBar({ selectedIds, notebooks, tags, onClear, onDone }:
 
         {/* ── Etiquetar ── */}
         {tags.length > 0 && (
-          <Dropdown label="Etiquetar" icon="🏷">
+          <Dropdown label="Etiquetar" icon={<LuTag className="w-3.5 h-3.5" />}>
             {(close) => (
               <>
                 {tags.map((tag) => (
@@ -293,7 +288,7 @@ export function BulkActionBar({ selectedIds, notebooks, tags, onClear, onDone }:
             (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(248,113,113,0.1)";
           }}
         >
-          <span>🗑</span>
+          <LuTrash2 className="w-3.5 h-3.5" />
           <span>Papelera</span>
         </button>
       </div>

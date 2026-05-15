@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LuArrowUpDown, LuCheck, LuFileText, LuFolderOpen,
+  LuLoader, LuNotepadText, LuSearch, LuSquarePen, LuTrash2, LuUpload,
+} from "react-icons/lu";
 import { NoteCard, type BulkDragData } from "@/components/notes/NoteCard";
 import { BulkActionBar } from "@/components/notes/BulkActionBar";
 import { Spinner } from "@/components/ui/Spinner";
@@ -298,7 +302,7 @@ export function NoteList({
                   onClick={() => setConfirmOpen(true)}
                   disabled={emptyingTrash}
                   title="Vaciar papelera"
-                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50"
                   style={{
                     color: "#f87171",
                     border: "1px solid rgba(248,113,113,0.35)",
@@ -311,7 +315,7 @@ export function NoteList({
                     (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(248,113,113,0.08)";
                   }}
                 >
-                  🗑 Vaciar
+                  <LuTrash2 className="w-3 h-3" /> Vaciar
                 </button>
               )
             ) : (
@@ -339,10 +343,7 @@ export function NoteList({
                     >
                       {importing ? (
                         <span className="relative flex items-center justify-center">
-                          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                          </svg>
+                          <LuLoader className="w-3.5 h-3.5 animate-spin" />
                           {importTotal > 1 && (
                             <span
                               className="absolute -top-1 -right-1 text-[8px] font-bold leading-none rounded-full w-3 h-3 flex items-center justify-center"
@@ -353,10 +354,7 @@ export function NoteList({
                           )}
                         </span>
                       ) : (
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v13m0-13l-4 4m4-4l4 4" />
-                        </svg>
+                        <LuUpload className="w-3.5 h-3.5" />
                       )}
                     </Button>
 
@@ -379,7 +377,7 @@ export function NoteList({
                           }
                           onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false); }}
                         >
-                          <span>📄</span><span>Importar archivos .md</span>
+                          <LuFileText className="w-3.5 h-3.5" /><span>Importar archivos .md</span>
                         </button>
                         <button
                           className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors"
@@ -392,7 +390,7 @@ export function NoteList({
                           }
                           onClick={() => { setFolderModalOpen(true); setImportMenuOpen(false); }}
                         >
-                          <span>📁</span><span>Importar notebook</span>
+                          <LuFolderOpen className="w-3.5 h-3.5" /><span>Importar notebook</span>
                         </button>
                       </div>
                     )}
@@ -401,10 +399,7 @@ export function NoteList({
 
                 {/* New note button */}
                 <Button size="icon" variant="ghost" onClick={onNewNote} title="Nueva nota (Ctrl+N)">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
+                  <LuSquarePen className="w-3.5 h-3.5" />
                 </Button>
               </>
             )}
@@ -413,14 +408,10 @@ export function NoteList({
 
         {/* Search */}
         <div className="relative">
-          <svg
+          <LuSearch
             className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3"
             style={{ color: "var(--app-text-muted)" }}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          />
           <input
             type="text"
             placeholder="Buscar notas..."
@@ -450,7 +441,10 @@ export function NoteList({
           </div>
         ) : notes.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <span className="text-2xl mb-2">{isTrashView ? "🗑️" : "📝"}</span>
+            {isTrashView
+            ? <LuTrash2    className="w-8 h-8 mb-2" style={{ color: "var(--app-text-muted)" }} />
+            : <LuNotepadText className="w-8 h-8 mb-2" style={{ color: "var(--app-text-muted)" }} />
+          }
             <p className="text-xs" style={{ color: "var(--app-text-muted)" }}>
               {isTrashView ? "Papelera vacía" : "No hay notas aquí"}
             </p>
@@ -740,10 +734,7 @@ function SortMenu({
             : "var(--app-text-muted)";
         }}
       >
-        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-        </svg>
+        <LuArrowUpDown className="w-3 h-3" />
       </button>
 
       {open && (
@@ -774,9 +765,7 @@ function SortMenu({
               >
                 <span>{opt.label}</span>
                 {active && (
-                  <svg className="w-3 h-3 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <LuCheck className="w-3 h-3 text-indigo-400 shrink-0" />
                 )}
               </button>
             );

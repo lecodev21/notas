@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { Notebook } from "@/generated/prisma/client";
+import { LuNotebook, LuPlus } from "react-icons/lu";
 
 type NotebookWithChildren = Notebook & {
   children?: NotebookWithChildren[];
@@ -204,9 +205,7 @@ function NotebookItem({
             className="flex-1 flex items-center gap-1.5 py-1.5 text-xs text-left min-w-0"
             style={{ color: isSelected ? "#818cf8" : "var(--app-text-secondary)" }}
           >
-            <span className="shrink-0" style={{ color: "var(--app-text-muted)" }}>
-              📓
-            </span>
+            <LuNotebook className="w-3 h-3 shrink-0" style={{ color: "var(--app-text-muted)" }} />
             <span className="truncate flex-1">{notebook.name}</span>
             {(notebook._count?.notes ?? 0) > 0 && (
               <span
@@ -227,9 +226,7 @@ function NotebookItem({
             title="Nuevo sub-notebook"
             onClick={(e) => { e.stopPropagation(); handleAddChild(); }}
           >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <LuPlus className="w-3 h-3" />
           </button>
         )}
 
@@ -326,7 +323,7 @@ function NotebookItem({
         <ul className="space-y-0.5">
           <li style={{ paddingLeft: `${8 + (depth + 1) * 12}px` }}>
             <div className="flex items-center gap-1 py-1 pr-1">
-              <span className="text-xs shrink-0" style={{ color: "var(--app-text-muted)" }}>📓</span>
+              <LuNotebook className="w-3 h-3 shrink-0" style={{ color: "var(--app-text-muted)" }} />
               <input
                 ref={childInputRef}
                 autoFocus

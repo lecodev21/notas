@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, type ComponentType } from "react";
+import { LuClipboardList, LuMenu, LuNetwork, LuSquarePen } from "react-icons/lu";
 
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
@@ -600,7 +601,7 @@ function GraphPanel({
         className="shrink-0 flex items-center gap-2 px-4 py-2"
         style={{ borderBottom: "1px solid var(--app-border)" }}
       >
-        <span className="text-sm" style={{ color: "var(--app-text-muted)" }}>🕸</span>
+        <LuNetwork className="w-4 h-4" style={{ color: "var(--app-text-muted)" }} />
         <span className="text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>
           Grafo de notas
         </span>
@@ -640,37 +641,9 @@ function MobileBottomNav({
   onSelectPanel: (p: "sidebar" | "list" | "editor") => void;
 }) {
   const items: { id: "sidebar" | "list" | "editor"; label: string; icon: React.ReactNode; disabled?: boolean }[] = [
-    {
-      id: "sidebar",
-      label: "Menú",
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M4 6h16M4 12h16M4 18h7" />
-        </svg>
-      ),
-    },
-    {
-      id: "list",
-      label: "Notas",
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-      ),
-    },
-    {
-      id: "editor",
-      label: "Editor",
-      disabled: !hasNote,
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-      ),
-    },
+    { id: "sidebar", label: "Menú",   icon: <LuMenu          className="w-5 h-5" /> },
+    { id: "list",    label: "Notas",  icon: <LuClipboardList className="w-5 h-5" /> },
+    { id: "editor",  label: "Editor", icon: <LuSquarePen     className="w-5 h-5" />, disabled: !hasNote },
   ];
 
   return (

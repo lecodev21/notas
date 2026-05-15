@@ -3,6 +3,7 @@ import { cn, formatDate, getExcerpt, truncate } from "@/lib/utils";
 import type { Note, NoteTag, Tag } from "@/generated/prisma/client";
 import { STATUS_META, type NoteStatus } from "@/lib/noteStatus";
 import { CopyContextMenu } from "@/components/ui/CopyContextMenu";
+import { LuPin, LuSquareCheck, LuTrash2 } from "react-icons/lu";
 
 const TRASH_TTL_DAYS = 30;
 
@@ -160,7 +161,7 @@ export function NoteCard({ note, isActive, isExiting, isSelected, bulkDragData, 
             ) : null;
           })()}
           {note.isPinned && (
-            <span className="text-indigo-400 shrink-0" aria-label="Pinned">📌</span>
+            <LuPin className="w-3 h-3 text-indigo-400 shrink-0" aria-label="Pinned" />
           )}
           {note.title || "Sin título"}
         </span>
@@ -184,8 +185,8 @@ export function NoteCard({ note, isActive, isExiting, isSelected, bulkDragData, 
       {/* ── Task progress indicator ── */}
       {tasks && (
         <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs" style={{ color: "var(--app-text-muted)" }}>
-            ☑ {tasks.done}/{tasks.total}
+          <span className="text-xs flex items-center gap-1" style={{ color: "var(--app-text-muted)" }}>
+            <LuSquareCheck className="w-3 h-3" /> {tasks.done}/{tasks.total}
           </span>
           {/* Mini progress bar */}
           <div
@@ -243,7 +244,7 @@ export function NoteCard({ note, isActive, isExiting, isSelected, bulkDragData, 
           : `Se elimina en ${days} días`;
         return (
           <div className="flex items-center gap-1 mt-2">
-            <span style={{ fontSize: "0.65rem" }}>🗑</span>
+            <LuTrash2 className="w-2.5 h-2.5" style={{ color: "var(--app-text-muted)" }} />
             <span
               className="text-[10px] font-medium"
               style={{ color: urgent ? "#f87171" : "var(--app-text-muted)" }}

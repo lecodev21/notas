@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { markdownToPlainText } from "@/lib/markdownToPlainText";
+import { LuCheck, LuClipboard, LuFileText } from "react-icons/lu";
 
 interface CopyContextMenuProps {
   /** Full Markdown body — used when there is no active selection */
@@ -77,7 +78,7 @@ export function CopyContextMenu({
     return (
       <div ref={ref} style={{ ...baseStyle, padding: "8px 14px" }}>
         <span className="flex items-center gap-2 text-xs">
-          <span className="text-green-400 font-bold">✓</span>
+          <LuCheck className="w-3.5 h-3.5 text-green-400" />
           <span style={{ color: "var(--app-text-secondary)" }}>Copiado</span>
         </span>
       </div>
@@ -85,8 +86,8 @@ export function CopyContextMenu({
   }
 
   const ITEMS = [
-    { label: "Copiar como Markdown", icon: "📋", format: "markdown" as const },
-    { label: "Copiar como texto",    icon: "📄", format: "plain"    as const },
+    { label: "Copiar como Markdown", icon: <LuClipboard className="w-3.5 h-3.5" />, format: "markdown" as const },
+    { label: "Copiar como texto",    icon: <LuFileText  className="w-3.5 h-3.5" />, format: "plain"    as const },
   ];
 
   return (

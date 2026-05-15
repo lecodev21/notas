@@ -1,8 +1,13 @@
 "use client";
 
-import { type MutableRefObject, useRef } from "react";
+import React, { type MutableRefObject, useRef } from "react";
 import { type EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
+import {
+  LuBold, LuBraces, LuCode, LuHeading1, LuHeading2, LuHeading3,
+  LuImage, LuItalic, LuLink, LuList, LuListChecks, LuListOrdered,
+  LuMinus, LuQuote, LuStrikethrough, LuTable,
+} from "react-icons/lu";
 
 // ── Editor commands ───────────────────────────────────────────────────────
 // All commands use onMouseDown + e.preventDefault() so the editor never
@@ -142,43 +147,42 @@ const CODE_BLOCK = "```\ncódigo\n```";
 
 interface Btn {
   id:     string;
-  label:  string;
+  label:  React.ReactNode;
   title:  string;
   cls?:   string;
   action: (view: EditorView) => void;
 }
 
+const ICN = "w-3.5 h-3.5";
+
 const GROUPS: Btn[][] = [
   // ── Inline formatting
   [
-    { id: "bold",   label: "B",   title: "Negrita",        cls: "font-bold",    action: v => wrapSelection(v, "**", "**", "texto")  },
-    { id: "italic", label: "I",   title: "Cursiva",        cls: "italic",       action: v => wrapSelection(v, "*",  "*",  "texto")  },
-    { id: "strike", label: "S",   title: "Tachado",        cls: "line-through", action: v => wrapSelection(v, "~~", "~~", "texto")  },
-    { id: "icode",  label: "`·`", title: "Código inline",  cls: "font-mono tracking-widest text-[9px]",
-                                                                                 action: v => wrapSelection(v, "`",  "`",  "código") },
+    { id: "bold",   label: <LuBold          className={ICN} />, title: "Negrita",        action: v => wrapSelection(v, "**", "**", "texto")  },
+    { id: "italic", label: <LuItalic        className={ICN} />, title: "Cursiva",        action: v => wrapSelection(v, "*",  "*",  "texto")  },
+    { id: "strike", label: <LuStrikethrough className={ICN} />, title: "Tachado",        action: v => wrapSelection(v, "~~", "~~", "texto")  },
+    { id: "icode",  label: <LuCode          className={ICN} />, title: "Código inline",  action: v => wrapSelection(v, "`",  "`",  "código") },
   ],
   // ── Headings
   [
-    { id: "h1", label: "H1", title: "Encabezado 1", action: v => toggleLinePrefix(v, "# ")   },
-    { id: "h2", label: "H2", title: "Encabezado 2", action: v => toggleLinePrefix(v, "## ")  },
-    { id: "h3", label: "H3", title: "Encabezado 3", action: v => toggleLinePrefix(v, "### ") },
+    { id: "h1", label: <LuHeading1 className={ICN} />, title: "Encabezado 1", action: v => toggleLinePrefix(v, "# ")   },
+    { id: "h2", label: <LuHeading2 className={ICN} />, title: "Encabezado 2", action: v => toggleLinePrefix(v, "## ")  },
+    { id: "h3", label: <LuHeading3 className={ICN} />, title: "Encabezado 3", action: v => toggleLinePrefix(v, "### ") },
   ],
   // ── Block elements
   [
-    { id: "quote", label: "❝",   title: "Cita",             action: v => toggleLinePrefix(v, "> ")     },
-    { id: "ul",    label: "≡",   title: "Lista",            action: v => toggleLinePrefix(v, "- ")     },
-    { id: "ol",    label: "1.",   title: "Lista numerada",   cls: "font-mono text-[10px]",
-                                                             action: v => toggleLinePrefix(v, "1. ")    },
-    { id: "task",  label: "☑",   title: "Lista de tareas",  action: v => toggleLinePrefix(v, "- [ ] ") },
-    { id: "hr",    label: "—",   title: "Línea divisora",   action: v => insertBlock(v, "---", 3)      },
-    { id: "cbk",   label: "{ }", title: "Bloque de código", cls: "font-mono text-[10px]",
-                                                             action: v => insertBlock(v, CODE_BLOCK, 4) },
+    { id: "quote", label: <LuQuote       className={ICN} />, title: "Cita",             action: v => toggleLinePrefix(v, "> ")     },
+    { id: "ul",    label: <LuList        className={ICN} />, title: "Lista",            action: v => toggleLinePrefix(v, "- ")     },
+    { id: "ol",    label: <LuListOrdered className={ICN} />, title: "Lista numerada",   action: v => toggleLinePrefix(v, "1. ")    },
+    { id: "task",  label: <LuListChecks  className={ICN} />, title: "Lista de tareas",  action: v => toggleLinePrefix(v, "- [ ] ") },
+    { id: "hr",    label: <LuMinus       className={ICN} />, title: "Línea divisora",   action: v => insertBlock(v, "---", 3)      },
+    { id: "cbk",   label: <LuBraces      className={ICN} />, title: "Bloque de código", action: v => insertBlock(v, CODE_BLOCK, 4) },
   ],
   // ── Insert
   [
-    { id: "link",  label: "🔗", title: "Enlace",  action: insertLink                               },
-    { id: "img",   label: "🖼", title: "Imagen",  action: v => insertBlock(v, "![alt](url)", 2)   },
-    { id: "table", label: "⊞", title: "Tabla",   action: v => insertBlock(v, TABLE, 2)            },
+    { id: "link",  label: <LuLink  className={ICN} />, title: "Enlace",  action: insertLink                             },
+    { id: "img",   label: <LuImage className={ICN} />, title: "Imagen",  action: v => insertBlock(v, "![alt](url)", 2) },
+    { id: "table", label: <LuTable className={ICN} />, title: "Tabla",   action: v => insertBlock(v, TABLE, 2)         },
   ],
 ];
 

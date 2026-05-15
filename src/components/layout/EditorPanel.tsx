@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LuAlignLeft, LuCheck, LuChevronDown, LuDownload, LuFileDown,
+  LuFileText, LuFocus, LuGlobe, LuLink2, LuLoader, LuMaximize2,
+  LuMinimize2, LuNotebook, LuPencilLine, LuPin, LuPinOff, LuShare2, LuTrash2,
+} from "react-icons/lu";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -391,7 +396,7 @@ export function EditorPanel({
         className="flex-1 flex flex-col items-center justify-center text-center theme-transition"
         style={{ backgroundColor: "var(--app-bg-editor)" }}
       >
-        <span className="text-4xl mb-3">✏️</span>
+        <LuPencilLine className="w-10 h-10 mb-3" style={{ color: "var(--app-text-faint)" }} />
         <p className="text-sm" style={{ color: "var(--app-text-secondary)" }}>
           Selecciona una nota para editarla
         </p>
@@ -423,17 +428,9 @@ export function EditorPanel({
               className={focusMode ? "text-indigo-400" : ""}
             >
               {focusMode ? (
-                /* Compress / exit-focus icon */
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M9 9L4 4m0 0h5m-5 0v5M15 9l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5m-5 0v-5M15 15l5 5m0 0h-5m5 0v-5" />
-                </svg>
+                <LuMinimize2 className="w-3.5 h-3.5" />
               ) : (
-                /* Expand / enter-focus icon */
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
+                <LuMaximize2 className="w-3.5 h-3.5" />
               )}
             </Button>
           )}
@@ -464,11 +461,7 @@ export function EditorPanel({
             title={readableWidth ? "Ancho completo" : "Ancho de lectura (≈680 px)"}
             className={readableWidth ? "text-indigo-400" : ""}
           >
-            {/* Column-width icon: two vertical bars with ↔ arrow */}
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 6h16M4 12h10M4 18h7" />
-            </svg>
+            <LuAlignLeft className="w-3.5 h-3.5" />
           </Button>
 
           <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
@@ -481,12 +474,7 @@ export function EditorPanel({
             title={writingMode === "focus" ? "Desactivar modo de escritura enfocada" : "Modo de escritura enfocada — centra la línea activa y atenúa el resto"}
             className={writingMode === "focus" ? "text-indigo-400" : ""}
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-              <rect x="2" y="9" width="20" height="6" rx="1"
-                fill="currentColor" opacity="0.15" stroke="none" />
-            </svg>
+            <LuFocus className="w-3.5 h-3.5" />
           </Button>
 
           <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
@@ -518,9 +506,9 @@ export function EditorPanel({
                   variant="ghost"
                   onClick={() => setConfirmDeleteOpen(true)}
                   title="Eliminar permanentemente"
-                  className="text-xs text-red-400 hover:text-red-300 px-2"
+                  className="text-xs text-red-400 hover:text-red-300 px-2 gap-1"
                 >
-                  🗑 Eliminar
+                  <LuTrash2 className="w-3.5 h-3.5" /> Eliminar
                 </Button>
               )}
             </>
@@ -535,10 +523,7 @@ export function EditorPanel({
                 className="text-xs gap-1 px-2"
                 style={{ color: note.shareToken ? "#818cf8" : undefined }}
               >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
+                <LuShare2 className="w-3 h-3" />
                 {note.shareToken ? "Compartida" : "Compartir"}
               </Button>
 
@@ -550,7 +535,7 @@ export function EditorPanel({
                   title={note.isPinned ? "Desfijar" : "Fijar nota"}
                   className={note.isPinned ? "text-indigo-400" : ""}
                 >
-                  📌
+                  {note.isPinned ? <LuPinOff className="w-3.5 h-3.5" /> : <LuPin className="w-3.5 h-3.5" />}
                 </Button>
               )}
 
@@ -561,10 +546,7 @@ export function EditorPanel({
                   onClick={() => setConfirmTrashOpen(true)}
                   title="Mover a papelera"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <LuTrash2 className="w-3.5 h-3.5" />
                 </Button>
               )}
             </>
@@ -600,8 +582,9 @@ export function EditorPanel({
           )}
 
           {note.notebook && (
-            <span className="text-xs" style={{ color: "var(--app-text-muted)" }}>
-              📓 {note.notebook.name}
+            <span className="text-xs flex items-center gap-1" style={{ color: "var(--app-text-muted)" }}>
+              <LuNotebook className="w-3 h-3 shrink-0" />
+              {note.notebook.name}
             </span>
           )}
           {note.notebook && (
@@ -732,17 +715,14 @@ export function EditorPanel({
             style={{ color: "var(--app-text-muted)" }}
             onClick={() => setBacklinksOpen((v) => !v)}
           >
-            <span>🔗</span>
+            <LuLink2 className="w-3 h-3" />
             <span style={{ color: "var(--app-text-secondary)", fontWeight: 600 }}>
               Backlinks ({backlinks.length})
             </span>
-            <svg
+            <LuChevronDown
               className="w-3 h-3 ml-auto transition-transform"
               style={{ transform: backlinksOpen ? "rotate(180deg)" : undefined }}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            />
           </button>
           {backlinksOpen && (
             <div
@@ -790,10 +770,10 @@ export function EditorPanel({
       <Modal open={confirmTrashOpen} onClose={() => setConfirmTrashOpen(false)}>
         <div className="flex flex-col items-center gap-3 px-2 py-1">
           <div
-            className="w-11 h-11 rounded-full flex items-center justify-center text-xl"
+            className="w-11 h-11 rounded-full flex items-center justify-center"
             style={{ backgroundColor: "rgba(99,102,241,0.12)" }}
           >
-            🗑️
+            <LuTrash2 className="w-5 h-5" style={{ color: "#818cf8" }} />
           </div>
           <div className="text-center">
             <p className="text-sm font-semibold mb-1" style={{ color: "var(--app-text-primary)" }}>
@@ -844,10 +824,10 @@ export function EditorPanel({
       <Modal open={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)}>
         <div className="flex flex-col items-center gap-3 px-2 py-1">
           <div
-            className="w-11 h-11 rounded-full flex items-center justify-center text-xl"
+            className="w-11 h-11 rounded-full flex items-center justify-center"
             style={{ backgroundColor: "rgba(239,68,68,0.15)" }}
           >
-            🗑
+            <LuTrash2 className="w-5 h-5 text-red-400" />
           </div>
           <div className="text-center">
             <p className="text-sm font-semibold mb-1" style={{ color: "var(--app-text-primary)" }}>
@@ -944,10 +924,10 @@ function ExportMenu({ title, body }: { title: string; body: string }) {
     }
   }
 
-  const ITEMS = [
-    { format: "md"   as const, icon: "📄", label: "Exportar como Markdown" },
-    { format: "html" as const, icon: "🌐", label: "Exportar como HTML"     },
-    { format: "pdf"  as const, icon: "📑", label: "Exportar como PDF"      },
+  const ITEMS: { format: "md" | "html" | "pdf"; icon: React.ReactNode; label: string }[] = [
+    { format: "md",   icon: <LuFileDown className="w-3.5 h-3.5" />, label: "Exportar como Markdown" },
+    { format: "html", icon: <LuGlobe    className="w-3.5 h-3.5" />, label: "Exportar como HTML"     },
+    { format: "pdf",  icon: <LuFileText className="w-3.5 h-3.5" />, label: "Exportar como PDF"      },
   ];
 
   return (
@@ -960,16 +940,9 @@ function ExportMenu({ title, body }: { title: string; body: string }) {
         className={open ? "text-indigo-400" : ""}
       >
         {busy ? (
-          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 11-8 8z" />
-          </svg>
+          <LuLoader className="w-3.5 h-3.5 animate-spin" />
         ) : (
-          /* Download / export icon */
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-          </svg>
+          <LuDownload className="w-3.5 h-3.5" />
         )}
       </Button>
 
@@ -1048,9 +1021,7 @@ function StatusSelector({
       >
         <span className="text-[10px] leading-none font-bold" style={{ color: meta.color }}>{meta.icon}</span>
         <span>{meta.label}</span>
-        <svg className="w-2.5 h-2.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <LuChevronDown className="w-2.5 h-2.5 opacity-50" />
       </button>
 
       {open && (
@@ -1086,9 +1057,7 @@ function StatusSelector({
                 <span className="text-[11px] leading-none font-bold" style={{ color: m.color }}>{m.icon}</span>
                 {m.label}
                 {isActive && (
-                  <svg className="w-3 h-3 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <LuCheck className="w-3 h-3 ml-auto shrink-0 text-indigo-400" />
                 )}
               </button>
             );

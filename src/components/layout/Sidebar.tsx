@@ -6,8 +6,12 @@ import { NotebookTree } from "@/components/notebooks/NotebookTree";
 import type { Notebook, Tag } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/lib/theme";
-import { useState } from "react";
+import React, { useState } from "react";
 import { STATUS_META, STATUS_ORDER, type NoteStatus } from "@/lib/noteStatus";
+import {
+  LuFileText, LuLogOut, LuMoon, LuNetwork, LuNotebook,
+  LuPencilLine, LuPin, LuPlus, LuSun, LuTrash2,
+} from "react-icons/lu";
 
 type NotebookWithChildren = Notebook & { children?: NotebookWithChildren[]; _count?: { notes: number } };
 type TagWithCount = Tag & { _count: { noteTags: number } };
@@ -34,11 +38,11 @@ interface SidebarProps {
   onToggleGraphMode?: () => void;
 }
 
-const NAV_ITEMS = [
-  { id: "all",    label: "Todas las notas", icon: "📄" },
-  { id: "pinned", label: "Fijadas",         icon: "📌" },
-  { id: "trash",  label: "Papelera",        icon: "🗑️" },
-] as const;
+const NAV_ITEMS: { id: "all" | "pinned" | "trash"; label: string; icon: React.ReactNode }[] = [
+  { id: "all",    label: "Todas las notas", icon: <LuFileText className="w-3.5 h-3.5" /> },
+  { id: "pinned", label: "Fijadas",         icon: <LuPin      className="w-3.5 h-3.5" /> },
+  { id: "trash",  label: "Papelera",        icon: <LuTrash2   className="w-3.5 h-3.5" /> },
+];
 
 export function Sidebar({
   notebooks,
@@ -80,10 +84,11 @@ export function Sidebar({
         style={{ borderBottom: "1px solid var(--app-border)" }}
       >
         <span
-          className="text-sm font-semibold tracking-wide"
+          className="text-sm font-semibold tracking-wide flex items-center gap-1.5"
           style={{ color: "var(--app-text-primary)" }}
         >
-          ✏️ Inkdrop
+          <LuPencilLine className="w-4 h-4" />
+          Inkdrop
         </span>
       </div>
 
@@ -115,7 +120,7 @@ export function Sidebar({
                       (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
                   }}
                 >
-                  <span>{item.icon}</span>
+                  {item.icon}
                   <span
                     style={{ color: isActive ? "#6366f1" : "var(--app-text-secondary)" }}
                   >
@@ -148,9 +153,7 @@ export function Sidebar({
               onClick={() => { setAddingNotebook(true); setNewNotebookName(""); }}
               title="Nuevo notebook"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              <LuPlus className="w-3 h-3" />
             </Button>
           </div>
 
@@ -170,7 +173,7 @@ export function Sidebar({
           {/* Inline new-notebook input */}
           {addingNotebook && (
             <div className="flex items-center gap-1 px-2 py-1">
-              <span className="text-xs shrink-0" style={{ color: "var(--app-text-muted)" }}>📓</span>
+              <LuNotebook className="w-3 h-3 shrink-0" style={{ color: "var(--app-text-muted)" }} />
               <input
                 autoFocus
                 value={newNotebookName}
@@ -317,19 +320,10 @@ export function Sidebar({
             onClick={toggleTheme}
             title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
           >
-            {theme === "dark" ? (
-              /* Sun icon */
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            ) : (
-              /* Moon icon */
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            )}
+            {theme === "dark"
+              ? <LuSun  className="w-3.5 h-3.5" />
+              : <LuMoon className="w-3.5 h-3.5" />
+            }
           </Button>
 
           {/* Sign out */}
@@ -339,10 +333,7 @@ export function Sidebar({
             onClick={() => signOut({ callbackUrl: "/login" })}
             title="Cerrar sesión"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
-            </svg>
+            <LuLogOut className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>
@@ -373,7 +364,7 @@ function GraphNavItem({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span>🕸</span>
+      <LuNetwork className="w-3.5 h-3.5" />
       <span>Grafo de notas</span>
     </button>
   );
