@@ -931,6 +931,87 @@ const mdDecorationsTheme = EditorView.theme({
   },
 });
 
+// ── GFM Alert decorations in the editor ───────────────────────────────────
+// Scans the raw document line-by-line for `> [!TYPE]` markers and colours
+// every line in that alert block with the corresponding alert colour.
+// Works independently of remark — operates on the raw CodeMirror text.
+
+const ALERT_LINE_COLORS: Record<string, { color: string; boxShadow: string; background: string }> = {
+  NOTE:      { color: "#3b82f6", boxShadow: "-4px 0 0 0 rgba(59,130,246,0.5)",  background: "rgba(59,130,246,0.06)"  },
+  TIP:       { color: "#22c55e", boxShadow: "-4px 0 0 0 rgba(34,197,94,0.5)",   background: "rgba(34,197,94,0.06)"   },
+  IMPORTANT: { color: "#a855f7", boxShadow: "-4px 0 0 0 rgba(168,85,247,0.5)",  background: "rgba(168,85,247,0.06)"  },
+  WARNING:   { color: "#f59e0b", boxShadow: "-4px 0 0 0 rgba(245,158,11,0.5)",  background: "rgba(245,158,11,0.06)"  },
+  CAUTION:   { color: "#ef4444", boxShadow: "-4px 0 0 0 rgba(239,68,68,0.5)",   background: "rgba(239,68,68,0.06)"   },
+};
+
+// One stable Decoration.line instance per alert type — created once at module load.
+const ALERT_LINE_DECOS = Object.fromEntries(
+  Object.keys(ALERT_LINE_COLORS).map((type) => [
+    type,
+    Decoration.line({ class: `cm-alert-${type.toLowerCase()}` }),
+  ])
+) as Record<string, Decoration>;
+
+function buildAlertDecorations(view: EditorView): DecorationSet {
+  const builder  = new RangeSetBuilder<Decoration>();
+  const { from: vFrom, to: vTo } = view.viewport;
+  const doc      = view.state.doc;
+  // Scan through the end of the current viewport
+  const endLineNum = doc.lineAt(Math.min(vTo, doc.length)).number;
+
+  let currentAlertType: string | null = null;
+
+  // Scan from line 1 so we catch blocks that started above the viewport
+  for (let lineNum = 1; lineNum <= endLineNum; lineNum++) {
+    const line  = doc.line(lineNum);
+    const text  = line.text;
+    // Does this line open an alert block?
+    const m = text.match(/^>\s*\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]/i);
+
+    if (m) {
+      currentAlertType = m[1].toUpperCase();
+    } else if (currentAlertType && /^>/.test(text)) {
+      // Continuation line — same alert type
+    } else {
+      currentAlertType = null;
+    }
+
+    // Only emit a decoration for lines that intersect the viewport
+    if (currentAlertType && line.to >= vFrom && line.from <= vTo) {
+      builder.add(line.from, line.from, ALERT_LINE_DECOS[currentAlertType]);
+    }
+  }
+
+  return builder.finish();
+}
+
+const alertDecorationsPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildAlertDecorations(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) {
+        this.decorations = buildAlertDecorations(u.view);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+// Build the theme object dynamically from ALERT_LINE_COLORS so the colours
+// stay in one place and never drift out of sync.
+const alertDecorationsTheme = EditorView.theme(
+  Object.fromEntries(
+    Object.entries(ALERT_LINE_COLORS).map(([type, { color, boxShadow, background }]) => [
+      `.cm-alert-${type.toLowerCase()}`,
+      // !important overrides the generic cm-md-bq teal that blockquotes already get
+      { color: `${color} !important`, boxShadow: `${boxShadow} !important`, background },
+    ])
+  )
+);
+
 // ── Extension bundles ──────────────────────────────────────────────────────
 const sharedExtensions = [
   markdown({ base: markdownLanguage, codeLanguages: resolveCodeLanguage }),
@@ -947,6 +1028,8 @@ const sharedExtensions = [
   taskTheme,
   mdDecorationsPlugin,
   mdDecorationsTheme,
+  alertDecorationsPlugin,
+  alertDecorationsTheme,
   ...findReplaceExtension,
   tableEditingExtension,
 ];
