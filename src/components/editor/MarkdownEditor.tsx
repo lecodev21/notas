@@ -574,10 +574,9 @@ function emojiSource(context: CompletionContext): CompletionResult | null {
   if (options.length === 0) return null;
 
   return {
-    from:     match.from,           // replace from the ":" onwards
+    from:    match.from, // replace from the ":" onwards
     options,
-    filter:   false,                // we handle filtering ourselves
-    validFor: /^:[a-z0-9_+\-]*$/,  // keep dropdown open while still typing
+    filter:  false,      // we handle filtering; source is re-called each keystroke
   };
 }
 
