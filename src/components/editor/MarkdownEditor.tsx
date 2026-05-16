@@ -910,24 +910,49 @@ const mdDecorationsPlugin = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-const mdDecorationsTheme = EditorView.theme({
-  // Each Markdown construct gets its own text colour so you can identify it
-  // at a glance without relying solely on font changes.
-  ".cm-md-strong": { fontWeight: "700",          color: "#4ade80" }, // green
-  ".cm-md-em":     { fontStyle:  "italic",       color: "#facc15" }, // yellow
-  ".cm-md-icode":  {                             color: "#f472b6", // pink
-    backgroundColor: "rgba(244,114,182,0.1)",
+// Shared structural styles (font-weight, decorations) — colour overrides
+// are split into light/dark variants below so bold/italic/etc. look good
+// on both backgrounds without being garish on either.
+const mdDecorationsBase = {
+  ".cm-md-syntax": { opacity: "0.45" },
+};
+
+const mdDecorationsThemeDark = EditorView.theme({
+  ...mdDecorationsBase,
+  // Dark theme: vivid but not neon — each colour pops on a dark background
+  ".cm-md-strong": { fontWeight: "700", color: "#86efac" }, // soft mint green
+  ".cm-md-em":     { fontStyle: "italic", color: "#fde68a" }, // warm amber
+  ".cm-md-icode":  {
+    color:           "#f9a8d4",                               // soft pink
+    backgroundColor: "rgba(249,168,212,0.1)",
     borderRadius:    "3px",
     padding:         "0 3px",
   },
-  ".cm-md-link":   { color: "#60a5fa" },                            // blue
+  ".cm-md-link":   { color: "#7dd3fc" },                     // sky blue
   ".cm-md-strike": { textDecoration: "line-through", color: "#fb923c" }, // orange
-  // Syntax punctuation — dim on top of whatever colour the parent gives it
-  ".cm-md-syntax": { opacity: "0.45" },
-  // Blockquote line — left accent bar via box-shadow + teal text
   ".cm-md-bq": {
-    color:     "#2dd4bf",                                            // teal
+    color:     "#2dd4bf",
     boxShadow: "-4px 0 0 0 rgba(45,212,191,0.5)",
+  },
+});
+
+const mdDecorationsThemeLight = EditorView.theme({
+  ...mdDecorationsBase,
+  // Light theme: saturated but legible on white — fluorescent-adjacent without
+  // burning the eyes; each colour has enough contrast for WCAG AA on white.
+  ".cm-md-strong": { fontWeight: "700", color: "#7c3aed" }, // violet-600
+  ".cm-md-em":     { fontStyle: "italic", color: "#b45309" }, // amber-700
+  ".cm-md-icode":  {
+    color:           "#be185d",                               // pink-700
+    backgroundColor: "rgba(190,24,93,0.07)",
+    borderRadius:    "3px",
+    padding:         "0 3px",
+  },
+  ".cm-md-link":   { color: "#1d4ed8" },                     // blue-700
+  ".cm-md-strike": { textDecoration: "line-through", color: "#c2410c" }, // orange-700
+  ".cm-md-bq": {
+    color:     "#0f766e",
+    boxShadow: "-4px 0 0 0 rgba(15,118,110,0.45)",
   },
 });
 
@@ -1027,7 +1052,6 @@ const sharedExtensions = [
   taskClickHandler,
   taskTheme,
   mdDecorationsPlugin,
-  mdDecorationsTheme,
   alertDecorationsPlugin,
   alertDecorationsTheme,
   ...findReplaceExtension,
@@ -1342,6 +1366,7 @@ export function MarkdownEditor({ value, onChange, editorViewRef, readableWidth, 
     // Syntax highlight style — matches the hljs preview palette exactly.
     // Prec.highest overrides the bundled highlight style from oneDark.
     Prec.highest(syntaxHighlighting(theme === "dark" ? darkHighlightStyle : lightHighlightStyle)),
+    theme === "dark" ? mdDecorationsThemeDark : mdDecorationsThemeLight,
     ...(theme !== "dark" ? [lightTheme] : []),
     // Writing mode: typewriter-scroll + paragraph-dim together
     ...(writingMode === "focus" ? [typewriterExtension, ...paragraphFocusExtension] : []),
