@@ -453,31 +453,37 @@ export function EditorPanel({
             </button>
           ))}
 
-          <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+          {/* Readable width — preview only */}
+          {mode === "preview" && (
+            <>
+              <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={toggleReadableWidth}
+                title={readableWidth ? "Ancho completo" : "Ancho de lectura (≈680 px)"}
+                className={readableWidth ? "text-indigo-400" : ""}
+              >
+                <LuAlignLeft className="w-3.5 h-3.5" />
+              </Button>
+            </>
+          )}
 
-          {/* Readable line-length toggle */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={toggleReadableWidth}
-            title={readableWidth ? "Ancho completo" : "Ancho de lectura (≈680 px)"}
-            className={readableWidth ? "text-indigo-400" : ""}
-          >
-            <LuAlignLeft className="w-3.5 h-3.5" />
-          </Button>
-
-          <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
-
-          {/* Focus writing mode toggle (typewriter + paragraph dim combined) */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={toggleWritingMode}
-            title={writingMode === "focus" ? "Desactivar modo de escritura enfocada" : "Modo de escritura enfocada — centra la línea activa y atenúa el resto"}
-            className={writingMode === "focus" ? "text-indigo-400" : ""}
-          >
-            <LuFocus className="w-3.5 h-3.5" />
-          </Button>
+          {/* Focus writing mode — edit and split only */}
+          {(mode === "edit" || mode === "split") && (
+            <>
+              <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={toggleWritingMode}
+                title={writingMode === "focus" ? "Desactivar modo de escritura enfocada" : "Modo de escritura enfocada — centra la línea activa y atenúa el resto"}
+                className={writingMode === "focus" ? "text-indigo-400" : ""}
+              >
+                <LuFocus className="w-3.5 h-3.5" />
+              </Button>
+            </>
+          )}
 
           <div className="w-px h-4 mx-1" style={{ backgroundColor: "var(--app-border)" }} />
 
