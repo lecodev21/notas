@@ -2,8 +2,11 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import hljs from "highlight.js";
-import { Children, cloneElement, isValidElement, useRef, useState } from "react";
+import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import React from "react";
 import { useTheme } from "@/lib/theme";
@@ -133,6 +136,75 @@ function AlertBlock({ type, children }: { type: AlertType; children: ReactNode }
         {children}
       </div>
     </div>
+  );
+}
+
+// ── Mermaid diagrams ───────────────────────────────────────────────────────
+// Dynamic import so the heavy mermaid bundle is only loaded when a mermaid
+// block is actually present in the document.
+
+function MermaidBlock({ code }: { code: string }) {
+  const { theme } = useTheme();
+  const isDark   = theme === "dark";
+  const [svg,    setSvg]   = useState<string>("");
+  const [error,  setError] = useState<string>("");
+  // Stable unique ID for the SVG element mermaid creates internally
+  const idRef = useRef(`mmd-${Math.random().toString(36).slice(2, 9)}`);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function render() {
+      try {
+        const m = (await import("mermaid")).default;
+        m.initialize({
+          startOnLoad:              false,
+          theme:                    isDark ? "dark" : "default",
+          suppressErrorRendering:   true,
+        });
+        const { svg: rendered } = await m.render(idRef.current, code);
+        if (!cancelled) { setSvg(rendered); setError(""); }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setSvg("");
+        }
+      }
+    }
+
+    render();
+    return () => { cancelled = true; };
+  }, [code, isDark]);
+
+  if (error) {
+    return (
+      <div className="not-prose hljs-block">
+        <div className="hljs-lang-bar"><span className="hljs-lang-label">mermaid</span></div>
+        <pre className="hljs-pre">
+          <code style={{ color: "#ef4444", whiteSpace: "pre-wrap" }}>Error: {error}</code>
+        </pre>
+      </div>
+    );
+  }
+
+  if (!svg) {
+    return (
+      <div
+        className="not-prose my-4 text-center text-xs"
+        style={{ color: "var(--app-text-faint)" }}
+      >
+        Renderizando diagrama…
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="not-prose my-4 flex justify-center overflow-auto"
+      // mermaid output is generated SVG — safe
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   );
 }
 
@@ -422,6 +494,11 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       const lang      = /language-(\w+)/.exec(className)?.[1] ?? "";
       const raw       = String(codeEl?.props?.children ?? "").replace(/\n$/, "");
 
+      // ── Mermaid diagrams ───────────────────────────────────────────────────
+      if (lang === "mermaid") {
+        return <MermaidBlock code={raw} />;
+      }
+
       // Resolve alias ("py" → "python", "ts" → "typescript", …) and verify
       // hljs knows it before highlighting — avoids console errors while the
       // user is still typing the language name (e.g. "p", "pyt"…).
@@ -584,7 +661,8 @@ export function MarkdownPreview({ content, onToggleTask, availableNotes: _availa
       <div ref={containerRef} className={proseClass}>
         {content ? (
           <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkAlerts]}
+            remarkPlugins={[remarkGfm, remarkAlerts, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
             components={components}
             urlTransform={(url) => url}
           >
