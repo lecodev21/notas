@@ -37,7 +37,8 @@ interface EditorPanelProps {
   availableTags?: Tag[];
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
-  onUpdate: (id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) => Promise<void>;
+  onUpdate: (id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus; notebookId?: string | null }) => Promise<void>;
+  availableNotebooks?: { id: string; name: string; parentId?: string | null }[];
   onDelete?: (id: string) => void;
   onTogglePin?: (id: string, isPinned: boolean) => void;
   onTrash?: (id: string) => void;
@@ -59,6 +60,7 @@ export function EditorPanel({
   note,
   loading,
   availableTags = [],
+  availableNotebooks = [],
   focusMode = false,
   onToggleFocusMode,
   onUpdate,
@@ -577,18 +579,16 @@ export function EditorPanel({
             />
           )}
 
-          {(note.notebook || !note.isTrashed) && (
-            <span style={{ color: "var(--app-border-strong)" }}>·</span>
-          )}
-
-          {note.notebook && (
-            <span className="text-xs flex items-center gap-1" style={{ color: "var(--app-text-muted)" }}>
-              <LuNotebook className="w-3 h-3 shrink-0" />
-              {note.notebook.name}
-            </span>
-          )}
-          {note.notebook && (
-            <span style={{ color: "var(--app-border-strong)" }}>·</span>
+          {!note.isTrashed && (
+            <>
+              <span style={{ color: "var(--app-border-strong)" }}>·</span>
+              <NotebookSelector
+                currentNotebook={note.notebook ?? null}
+                notebooks={availableNotebooks}
+                onChange={(notebookId) => onUpdate(note.id, { notebookId })}
+              />
+              <span style={{ color: "var(--app-border-strong)" }}>·</span>
+            </>
           )}
           <TagInput
             currentTags={note.noteTags.map(({ tag }) => tag)}
@@ -1059,6 +1059,161 @@ function StatusSelector({
                 {isActive && (
                   <LuCheck className="w-3 h-3 ml-auto shrink-0 text-indigo-400" />
                 )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Notebook selector ──────────────────────────────────────────────────────
+
+type FlatNotebook = { id: string; name: string; parentId?: string | null };
+
+/** DFS walk of the notebook tree → ordered flat list with depth level. */
+function flattenNotebookTree(notebooks: FlatNotebook[]): (FlatNotebook & { level: number })[] {
+  const result: (FlatNotebook & { level: number })[] = [];
+  const byParent = new Map<string | null, FlatNotebook[]>();
+
+  for (const nb of notebooks) {
+    const pid = nb.parentId ?? null;
+    if (!byParent.has(pid)) byParent.set(pid, []);
+    byParent.get(pid)!.push(nb);
+  }
+
+  function dfs(parentId: string | null, level: number) {
+    for (const nb of byParent.get(parentId) ?? []) {
+      result.push({ ...nb, level });
+      dfs(nb.id, level + 1);
+    }
+  }
+
+  dfs(null, 0);
+  return result;
+}
+
+function NotebookSelector({
+  currentNotebook,
+  notebooks,
+  onChange,
+}: {
+  currentNotebook: { id: string; name: string } | null;
+  notebooks: FlatNotebook[];
+  onChange: (notebookId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const flattened = flattenNotebookTree(notebooks);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5"
+        style={{ color: "var(--app-text-muted)" }}
+        onMouseEnter={(e) =>
+          ((e.currentTarget as HTMLButtonElement).style.color = "var(--app-text-secondary)")
+        }
+        onMouseLeave={(e) =>
+          ((e.currentTarget as HTMLButtonElement).style.color = "var(--app-text-muted)")
+        }
+        title="Cambiar notebook"
+      >
+        <LuNotebook className="w-3 h-3 shrink-0" />
+        <span>{currentNotebook ? currentNotebook.name : "Sin notebook"}</span>
+        <LuChevronDown className="w-2.5 h-2.5 opacity-50" />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-30 rounded-lg shadow-xl py-1 w-52 max-h-64 overflow-y-auto"
+          style={{
+            backgroundColor: "var(--app-bg-menu)",
+            border: "1px solid var(--app-border-strong)",
+          }}
+        >
+          {/* "Sin notebook" option */}
+          <button
+            onClick={() => { onChange(null); setOpen(false); }}
+            className="w-full flex items-center gap-2 py-1.5 text-xs transition-colors"
+            style={{
+              paddingLeft: 12,
+              paddingRight: 12,
+              color: !currentNotebook ? "#818cf8" : "var(--app-text-muted)",
+              fontWeight: !currentNotebook ? 600 : undefined,
+              backgroundColor: !currentNotebook ? "rgba(99,102,241,0.08)" : undefined,
+            }}
+            onMouseEnter={(e) => {
+              if (currentNotebook)
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+            }}
+            onMouseLeave={(e) => {
+              if (currentNotebook)
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+            }}
+          >
+            <LuNotebook className="w-3 h-3 shrink-0 opacity-40" />
+            <span>Sin notebook</span>
+            {!currentNotebook && <LuCheck className="w-3 h-3 ml-auto shrink-0 text-indigo-400" />}
+          </button>
+
+          {flattened.length > 0 && (
+            <div style={{ borderTop: "1px solid var(--app-border)" }} className="my-1" />
+          )}
+
+          {flattened.map((nb) => {
+            const isActive = nb.id === currentNotebook?.id;
+            // Base indent 12px + 14px per level
+            const indent = 12 + nb.level * 14;
+            return (
+              <button
+                key={nb.id}
+                onClick={() => { onChange(nb.id); setOpen(false); }}
+                className="w-full flex items-center gap-1.5 py-1.5 text-xs transition-colors"
+                style={{
+                  paddingLeft:     indent,
+                  paddingRight:    12,
+                  color:           isActive ? "#818cf8" : "var(--app-text-secondary)",
+                  fontWeight:      isActive ? 600 : undefined,
+                  backgroundColor: isActive ? "rgba(99,102,241,0.08)" : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive)
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--app-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive)
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "";
+                }}
+              >
+                {/* Visual depth cue: dim connector for child levels */}
+                {nb.level > 0 && (
+                  <span
+                    className="shrink-0"
+                    style={{
+                      width:       1,
+                      height:      12,
+                      background:  "var(--app-border-strong)",
+                      borderRadius: 1,
+                      marginRight: 2,
+                    }}
+                  />
+                )}
+                <LuNotebook className="w-3 h-3 shrink-0" style={{ opacity: nb.level > 0 ? 0.6 : 1 }} />
+                <span className="truncate">{nb.name}</span>
+                {isActive && <LuCheck className="w-3 h-3 ml-auto shrink-0 text-indigo-400" />}
               </button>
             );
           })}

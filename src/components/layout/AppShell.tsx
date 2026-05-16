@@ -146,7 +146,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
     await bulkUpdate(noteIds, { action: "move", notebookId });
   }
 
-  async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus }) {
+  async function handleUpdate(id: string, data: { title?: string; body?: string; tagIds?: string[]; status?: NoteStatus; notebookId?: string | null }) {
     // Before updating, figure out which tags are being removed from this note.
     // If a removed tag ends up with 0 notes after this update, delete it.
     let removedTagIds: string[] = [];
@@ -532,6 +532,7 @@ export function AppShell({ initialNoteId }: AppShellProps) {
               note={activeNote ?? null}
               loading={noteLoading && !!selectedNoteId}
               availableTags={tags}
+              availableNotebooks={notebooks}
               focusMode={focusMode}
               onToggleFocusMode={() => setFocusMode((v) => !v)}
               onUpdate={handleUpdate}
