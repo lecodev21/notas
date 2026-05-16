@@ -571,17 +571,9 @@ export function EditorPanel({
           style={{ color: "var(--app-text-primary)" }}
         />
         <div className="flex flex-wrap items-center gap-2 mt-1.5">
-          {/* Status selector */}
-          {!note.isTrashed && (
-            <StatusSelector
-              status={(note.status as NoteStatus) ?? "active"}
-              onChange={(s) => onUpdate(note.id, { status: s })}
-            />
-          )}
-
+          {/* Notebook selector */}
           {!note.isTrashed && (
             <>
-              <span style={{ color: "var(--app-border-strong)" }}>·</span>
               <NotebookSelector
                 currentNotebook={note.notebook ?? null}
                 notebooks={availableNotebooks}
@@ -590,6 +582,19 @@ export function EditorPanel({
               <span style={{ color: "var(--app-border-strong)" }}>·</span>
             </>
           )}
+
+          {/* Status selector */}
+          {!note.isTrashed && (
+            <>
+              <StatusSelector
+                status={(note.status as NoteStatus) ?? "active"}
+                onChange={(s) => onUpdate(note.id, { status: s })}
+              />
+              <span style={{ color: "var(--app-border-strong)" }}>·</span>
+            </>
+          )}
+
+          {/* Tags */}
           <TagInput
             currentTags={note.noteTags.map(({ tag }) => tag)}
             availableTags={availableTags}
